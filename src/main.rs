@@ -105,15 +105,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         info!("setting sample rate to {}", sample_rate);
                         ctl.lock().unwrap().set_sample_rate(sample_rate).unwrap();
                     }
-                    0x05 => {
-                        let ppm = i32::from_be_bytes((&buf[1..5]).try_into().unwrap());
-                        info!("setting ppm to {}", ppm);
-                        ctl.lock().unwrap().set_ppm(ppm).unwrap();
+                    0x03 => {
+                        let gain_mode = i32::from_be_bytes((&buf[1..5]).try_into().unwrap());
+                        if gain_mode > 0 {
+                            info!("manual tuner gain requested");
+                            info!("setting automatic gain control to on");
+                            ctl.lock().unwrap().enable_agc().unwrap();
+                        } else {
+                            info!("manual tuner gain requested, disabling agc");
+                            info!("setting automatic gain control to off");
+                            ctl.lock().unwrap().disable_agc().unwrap();
+                        }
                     }
                     0x04 => {
                         let gain = i32::from_be_bytes((&buf[1..5]).try_into().unwrap());
                         info!("setting manual gain to {}", gain);
                         ctl.lock().unwrap().set_tuner_gain(gain).unwrap();
+                    }
+                    0x05 => {
+                        let ppm = i32::from_be_bytes((&buf[1..5]).try_into().unwrap());
+                        info!("setting ppm to {}", ppm);
+                        ctl.lock().unwrap().set_ppm(ppm).unwrap();
                     }
                     0x08 => {
                         let agc = u32::from_be_bytes((&buf[1..5]).try_into().unwrap()) == 1u32;
