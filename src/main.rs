@@ -1,7 +1,7 @@
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::io::ErrorKind;
-use std::net::TcpListener;
+use std::net::{TcpListener, Shutdown};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
@@ -11,6 +11,10 @@ use clap::Parser;
 #[cfg(feature = "systemd")]
 use listenfd::ListenFd;
 use tracing::{debug, info, warn};
+use std::result::Result as StdResult;
+
+mod error;
+use crate::error::RtlTcpError;
 
 /// RTL-TCP protocol command codes
 const COMMAND_HEADER_SIZE: usize = 5;
@@ -166,23 +170,23 @@ struct Args {
     write_timeout: u64,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> StdResult<(), RtlTcpError> {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
 
     // Validate buffers and tcp_buffers manually
     if args.buffers == 0 || args.buffers > 32 {
-        return Err("buffers must be between 1 and 32".into());
+        return Err(RtlTcpError::ConfigError("buffers must be between 1 and 32".to_string()));
     }
     if args.tcp_buffers == 0 || args.tcp_buffers > 10_485_760 {
-        return Err("tcp_buffers must be between 1 and 10485760 (10MB)".into());
+        return Err(RtlTcpError::ConfigError("tcp_buffers must be between 1 and 10485760 (10MB)".to_string()));
     }
     if args.read_timeout == 0 {
-        return Err("read_timeout must be greater than 0".into());
+        return Err(RtlTcpError::ConfigError("read_timeout must be greater than 0".to_string()));
     }
     if args.write_timeout == 0 {
-        return Err("write_timeout must be greater than 0".into());
+        return Err(RtlTcpError::ConfigError("write_timeout must be greater than 0".to_string()));
     }
 
     // Warn when binding to all interfaces
@@ -203,7 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut listenfd = ListenFd::from_env();
         listener = if let Some(listener) = listenfd
             .take_tcp_listener(0)
-            .map_err(|e| format!("could not get file descriptor from environment: {e}"))?
+            .map_err(|e| RtlTcpError::ConfigError(format!("could not get file descriptor from environment: {e}")))?
         {
             listener
         } else {
@@ -220,16 +224,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sender_ctrlc = sender.clone();
     let should_exit = Arc::new(AtomicBool::new(false));
     let should_exit_ctrlc = should_exit.clone();
-    ctrlc::set_handler(move || {
-        info!("received signal, shutting down");
-        match sender_ctrlc.try_send(()) {
-            Ok(_) => {}
-            Err(_) => {
-                warn!("could not send exit signal, exiting immediately");
-                should_exit_ctrlc.store(true, Ordering::SeqCst);
-            }
-        }
-    }).map_err(|e| format!("could not set signal handler: {e}"))?;
 
     let read_timeout = Duration::from_secs(args.read_timeout);
     let write_timeout = Duration::from_secs(args.write_timeout);
@@ -239,13 +233,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("connection from {addr}");
     stream.set_read_timeout(Some(read_timeout))?;
     stream.set_write_timeout(Some(write_timeout))?;
+
+    // Task 2.2: Clone the stream for signal-based shutdown.
+    // This allows the signal handler to interrupt blocking reads immediately,
+    // rather than waiting for the read timeout to expire.
+    let stream_for_shutdown = Arc::new(Mutex::new(Some(stream.try_clone()?)));
+    let stream_for_shutdown_ctrlc = stream_for_shutdown.clone();
+
     let (ctl, mut reader) =
-        rtlsdr_mt::open(args.device_index).map_err(|e| format!("could not open RTL-SDR device: {e:?}"))?;
+        rtlsdr_mt::open(args.device_index).map_err(|e| RtlTcpError::DeviceError(format!("could not open RTL-SDR device: {e:?}")))?;
     let ctl = Arc::new(Mutex::new(ctl));
+
+    ctrlc::set_handler(move || {
+        info!("received signal, shutting down");
+        match sender_ctrlc.try_send(()) {
+            Ok(_) => {}
+            Err(_) => {
+                warn!("could not send exit signal, exiting immediately");
+                should_exit_ctrlc.store(true, Ordering::SeqCst);
+            }
+        }
+        // Task 2.2: Shutdown the TCP stream to interrupt any blocking reads.
+        // This causes read_exact to return immediately with a connection error,
+        // allowing the control thread to check should_exit and break cleanly.
+        if let Ok(stream_opt) = stream_for_shutdown_ctrlc.lock() {
+            if let Some(ref stream) = *stream_opt {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
+        }
+    }).map_err(|e| RtlTcpError::ConfigError(format!("could not set signal handler: {e}")))?;
+
+    // Task 2.3: Track unknown commands for better visibility
+    let unknown_command_count = Arc::new(Mutex::new(0u64));
 
     let thread_ctl = std::thread::spawn({
         let ctl = ctl.clone();
         let should_exit = should_exit.clone();
+        let unknown_command_count = unknown_command_count.clone();
         let mut stream = stream.try_clone()?;
         move || {
             let mut buf = [0u8; COMMAND_HEADER_SIZE];
@@ -256,7 +280,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(e) if e.kind() == ErrorKind::UnexpectedEof
                         || e.kind() == ErrorKind::ConnectionReset
                         || e.kind() == ErrorKind::BrokenPipe
-                        || e.kind() == ErrorKind::TimedOut =>
+                        || e.kind() == ErrorKind::TimedOut
+                        || e.kind() == ErrorKind::ConnectionAborted
+                        || e.kind() == ErrorKind::NotConnected =>
                     {
                         info!("client disconnected: {e}");
                         break;
@@ -371,7 +397,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     _ => {
-                        debug!("recv unsupported command {buf:?}");
+                        // Task 2.3: Changed from debug! to warn! and added counter
+                        let mut count = unknown_command_count.lock().unwrap();
+                        *count += 1;
+                        warn!("recv unsupported command {buf:?} (total unknown commands: {count})");
                     }
                 }
             }
