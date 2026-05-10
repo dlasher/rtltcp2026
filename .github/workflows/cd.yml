@@ -3,6 +3,7 @@ name: CD # Continuous Deployment
 on:
   push:
     tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
@@ -42,35 +43,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.job.target }}
-      - name: install dependencies
+
+      - name: Install native dependencies
         if: ${{ !matrix.job.use-cross }}
         shell: bash
         run: |
           sudo apt update
           sudo apt-get install -y librtlsdr-dev libsystemd-dev
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Install cross toolchain
         if: ${{ matrix.job.use-cross }}
-        shell: bash
-        run: |
-          # cross handles cross-compilation via docker
-          echo "cross-compilation via cross-rs"
-      - uses: Swatinem/rust-cache@v2
-      - name: Cargo build
+        uses: taiki-e/install-action@cross
+
+      - name: Cargo build (native)
         if: ${{ !matrix.job.use-cross }}
         run: cargo build --release --target ${{ matrix.job.target }}
 
-      - name: Cross build
-        if: ${{ matrix.job.use-cross }}
-        uses: taiki-e/cross-install-action@v1
-        with:
-          target: ${{ matrix.job.target }}
-          toolchain: stable
-
-      - name: Cross Cargo build
+      - name: Cargo build (cross)
         if: ${{ matrix.job.use-cross }}
         run: cross build --release --target ${{ matrix.job.target }}
 
@@ -84,6 +80,7 @@ jobs:
               sudo apt update
               sudo apt-get install -y binutils-arm-linux-gnueabihf
           fi
+
       - name: Packaging final binary
         shell: bash
         run: |
@@ -98,14 +95,15 @@ jobs:
           else
             GCC_PREFIX=""
           fi
-          "$GCC_PREFIX"strip $BINARY_NAME
+          "${GCC_PREFIX}strip" "$BINARY_NAME"
 
           ########## create tar.gz ##########
-          RELEASE_NAME=rtltcp-${GITHUB_REF/refs\/tags\//}-${{ matrix.job.os-name }}-${{ matrix.job.architecture }}
-          tar czvf $RELEASE_NAME.tar.gz $BINARY_NAME
+          RELEASE_NAME=rtltcp-${GITHUB_REF#refs/tags/}-${{ matrix.job.os-name }}-${{ matrix.job.architecture }}
+          tar czvf "$RELEASE_NAME.tar.gz" "$BINARY_NAME"
 
           ########## create sha256 ##########
-          sha256sum $RELEASE_NAME.tar.gz > $RELEASE_NAME.sha256
+          sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
+
       - name: Releasing assets
         uses: softprops/action-gh-release@v2
         with:
@@ -122,7 +120,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: install dependencies
+      - name: Install native dependencies
         shell: bash
         run: |
           sudo apt update
