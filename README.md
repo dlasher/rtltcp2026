@@ -1,40 +1,86 @@
 # rtltcp
 
-[![Rust GitHub Template](https://img.shields.io/badge/Rust%20GitHub-Template-blue)](https://rust-github.github.io/)
+[![CI](https://github.com/FirebirdRender/rtltcp/workflows/CI/badge.svg)](https://github.com/FirebirdRender/rtltcp/actions)
+[![Coverage Status](https://coveralls.io/repos/github/FirebirdRender/rtltcp/badge.svg?branch=main)](https://coveralls.io/github/FirebirdRender/rtltcp?branch=main)
 [![Crates.io](https://img.shields.io/crates/v/rtltcp.svg)](https://crates.io/crates/rtltcp)
-[![CI](https://github.com/niclashoyer/rtltcp/workflows/CI/badge.svg)](https://github.com/niclashoyer/rtltcp/actions)
-[![Coverage Status](https://coveralls.io/repos/github/niclashoyer/rtltcp/badge.svg?branch=main)](https://coveralls.io/github/niclashoyer/rtltcp?branch=main)
+[![Rust Version](https://img.shields.io/badge/rust-1.74%2B-blue)](https://www.rust-lang.org)
 
-A rust implementation of [rtl-tcp](https://github.com/pinkavaj/rtl-sdr/blob/master/src/rtl_tcp.c)
-with better buffering and support for systemd [socket activation](http://0pointer.de/blog/projects/socket-activation.html).
+A production-ready Rust implementation of [rtl-tcp](https://github.com/pinkavaj/rtl-sdr/blob/master/src/rtl_tcp.c) with improved stability, better buffering, and support for systemd [socket activation](http://0pointer.de/blog/projects/socket-activation.html).
+
+## Features
+
+- **Robust error handling** - No more crashes on client disconnect or device errors
+- **Graceful shutdown** - Proper cleanup of device resources and threads
+- **Systemd socket activation** - Start on demand, keep USB dongle cool when idle
+- **Production tested** - Runs reliably on ARM devices (Odroid, Raspberry Pi)
 
 ## Installation
 
 ### Download the latest binary release
 
-Download the [latest release](https://github.com/niclashoyer/rtltcp/releases) of rtltcp and place it in `/usr/local/bin`:
+Download the [latest release](https://github.com/FirebirdRender/rtltcp/releases) for your platform:
 
 ```bash
-# ARMv7 (e.g. Raspberry Pi)
-wget https://github.com/niclashoyer/rtltcp/releases/download/0.1.0/rtltcp-raspbian-armv7 -O /usr/local/bin/rtltcp
+# x86_64 Linux
+wget https://github.com/FirebirdRender/rtltcp/releases/download/0.2.0/rtltcp-linux-x86_64.tar.gz
+tar xzf rtltcp-linux-x86_64.tar.gz
+sudo mv rtltcp /usr/local/bin/
+chmod +x /usr/local/bin/rtltcp
+
+# ARM64 (aarch64)
+wget https://github.com/FirebirdRender/rtltcp/releases/download/0.2.0/rtltcp-linux-arm64.tar.gz
+tar xzf rtltcp-linux-arm64.tar.gz
+sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
 ```
 
-### Cargo
+### Build from source
 
-If you want to build the code using your own rust toolchain, you can use `cargo` to do this for you.
+Requirements:
+- Rust 1.74 or later
+- librtlsdr-dev
+- libsystemd-dev
 
-* Install the rust toolchain in order to have cargo installed by following
-  [this](https://www.rust-lang.org/tools/install) guide.
-* run `cargo install rtltcp`
+```bash
+git clone https://github.com/FirebirdRender/rtltcp.git
+cd rtltcp
+cargo build --release
+sudo cp target/release/rtltcp /usr/local/bin/
+```
+
+## Usage
+
+### Command Line Options
+
+```
+rtltcp 0.2.0
+an I/Q spectrum server for RTL2832 based DVB-T receivers
+
+USAGE:
+    rtltcp [OPTIONS]
+
+OPTIONS:
+    -a, --address <ADDRESS>     listen address [default: [::]]
+    -p, --port <PORT>           listen port [default: 1234]
+    -d, --device-index <INDEX>  device index [default: 0]
+    -b, --buffers <COUNT>       number of decoding buffers [default: 15]
+    -s, --tcp-buffers <SIZE>    tcp sending buffer size (bytes) [default: 512000]
+    -h, --help                  Print help
+    -V, --version               Print version
+```
+
+### Connect with an SDR client
+
+```bash
+# Using gqrx, SDR#, or any rtl-tcp compatible client
+# Connect to your server's IP on port 1234
+```
 
 ### Using Systemd Socket Activation
 
-By using systemd socket activation it is possible to start rtltcp just if there is a connection. This keeps the rtl-sdr stick cool while not in use without any effort on the server side.
+By using systemd socket activation, rtltcp starts only when a client connects, keeping the RTL-SDR dongle cool when idle.
 
-To use socket activation, place a file `rtltcp.service` and a file `rtltcp.socket` in `/etc/systemd/system/`.
-
-`rtltcp.service`:
+Create `/etc/systemd/system/rtltcp.service`:
 
 ```ini
 [Unit]
@@ -44,12 +90,12 @@ Requires=rtltcp.socket
 
 [Service]
 Type=notify
-User=pi
 ExecStart=/usr/local/bin/rtltcp
 TimeoutStopSec=5
 ```
 
-`rtltcp.socket`:
+Create `/etc/systemd/system/rtltcp.socket`:
+
 ```ini
 [Unit]
 Description=RTL TCP Socket
@@ -62,15 +108,45 @@ ListenStream=[::]:1234
 WantedBy=sockets.target
 ```
 
-Install rtltcp either by using `cargo install` or download the latest release (see above).
-Now enable and start the socket:
+Enable and start:
 
 ```bash
-systemctl enable rtltcp.socket
-systemctl start rtltcp.socket
+sudo systemctl enable rtltcp.socket
+sudo systemctl start rtltcp.socket
 ```
 
-Systemd should now be listening on port 1234 and start/stop rtltcp automatically.
+## Protocol Commands
+
+| Command | Code | Description |
+|---------|------|-------------|
+| Set Frequency | 0x01 | Set center frequency (Hz) |
+| Set Sample Rate | 0x02 | Set sample rate (Hz) |
+| Set Gain Mode | 0x03 | 0 = auto (AGC on), non-zero = manual |
+| Set Tuner Gain | 0x04 | Set manual gain (dB * 10) |
+| Set PPM | 0x05 | Set frequency correction (ppm) |
+| Set AGC | 0x08 | 1 = AGC on, 0 = AGC off |
+
+## Building
+
+```bash
+# Development build
+cargo build
+
+# Release build (with optimizations)
+cargo build --release
+
+# Run tests
+cargo test --all-features
+
+# Run with logging
+RUST_LOG=debug cargo run -- --port 1234
+```
+
+## System Requirements
+
+- RTL2832-based DVB-T receiver (RTL-SDR)
+- Linux with libusb 1.0+
+- Rust 1.74+ (for building from source)
 
 ## License
 
@@ -83,10 +159,6 @@ Licensed under either of
 
 at your option.
 
-## Contribution
+## Contributing
 
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
-dual licensed as above, without any additional terms or conditions.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
