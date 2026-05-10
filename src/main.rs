@@ -158,7 +158,7 @@ struct Args {
     buffers: u32,
 
     /// tcp sending buffer size (in bytes)
-    #[clap(short, long, default_value_t = 512000)]
+    #[clap(short = 's', long, default_value_t = 512000)]
     tcp_buffers: usize,
 
     /// socket read timeout in seconds

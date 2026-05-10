@@ -1,0 +1,38 @@
+[Unit]
+Description=RTL TCP Service (Hardened)
+After=network.target
+Requires=rtltcp.socket
+ConditionPathExists=/dev/bus/usb/
+ConditionPathExistsGlob=/dev/bus/usb/*/*
+ConditionPathIsDirectory=/dev/bus/usb
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/rtltcp
+TimeoutStopSec=5
+
+# Security hardening directives
+User=rtlsdr
+Group=rtlsdr
+NoNewPrivileges=true
+SystemCallFilter=~@privileged @reboot @cpu-emulation @debug @obsolete
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=false
+PrivateUsers=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
