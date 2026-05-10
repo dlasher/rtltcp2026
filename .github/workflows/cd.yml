@@ -52,10 +52,27 @@ jobs:
         run: |
           sudo apt update
           sudo apt-get install -y librtlsdr-dev libsystemd-dev
+      - name: Install cross toolchain
+        if: ${{ matrix.job.use-cross }}
+        shell: bash
+        run: |
+          # cross handles cross-compilation via docker
+          echo "cross-compilation via cross-rs"
       - uses: Swatinem/rust-cache@v2
       - name: Cargo build
         if: ${{ !matrix.job.use-cross }}
         run: cargo build --release --target ${{ matrix.job.target }}
+
+      - name: Cross build
+        if: ${{ matrix.job.use-cross }}
+        uses: taiki-e/cross-install-action@v1
+        with:
+          target: ${{ matrix.job.target }}
+          toolchain: stable
+
+      - name: Cross Cargo build
+        if: ${{ matrix.job.use-cross }}
+        run: cross build --release --target ${{ matrix.job.target }}
 
       - name: Install strip command
         shell: bash
