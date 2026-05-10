@@ -5,7 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-05-10
+
+### Added
+- Configurable read/write timeout values via `--read-timeout` and `--write-timeout` CLI flags
+- Rate limiting for commands to prevent command flooding (50ms minimum interval)
+- Input validation for protocol payloads (frequency, sample rate, gain ranges, PPM values)
+- Warning when binding to all interfaces for security awareness
+
+### Changed
+- **BREAKING**: Default bind address changed from `[::]` to `127.0.0.1` for security
+- Enhanced command processing with input validation and bounds checking
+
+### Security
+- Default localhost binding prevents accidental network exposure
+- Rate limiting prevents command flooding attacks
+- Input validation prevents out-of-range values from reaching device
 
 ## [0.2.1] - 2026-05-10
 

@@ -61,13 +61,14 @@ USAGE:
     rtltcp [OPTIONS]
 
 OPTIONS:
-    -a, --address <ADDRESS>     listen address [default: [::]]
+    -a, --address <ADDRESS>     listen address [default: 127.0.0.1]
     -p, --port <PORT>           listen port [default: 1234]
     -d, --device-index <INDEX>  device index [default: 0]
     -b, --buffers <COUNT>       number of decoding buffers [default: 15, range: 1-32]
     -s, --tcp-buffers <SIZE>    tcp sending buffer size (bytes) [default: 512000, range: 1-10485760]
+    --read-timeout <SECONDS>    socket read timeout [default: 30]
+    --write-timeout <SECONDS>   socket write timeout [default: 30]
     -h, --help                  Print help
-    -V, --version               Print version
 ```
 
 ### Connect with an SDR client

@@ -5,6 +5,7 @@ use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 #[cfg(feature = "systemd")]
@@ -24,6 +25,25 @@ const CMD_SET_AGC: u8 = 0x08;
 /// "RTL0" (4 bytes) + tuner type 5 (4 bytes BE) + max gain value 0x1d (4 bytes BE)
 const MAGIC_PACKET: &[u8] = b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d";
 
+/// Valid frequency range for RTL-SDR devices (0 Hz to 2.2 GHz)
+const FREQ_MIN: u32 = 0;
+const FREQ_MAX: u32 = 2_200_000_000;
+
+/// Valid sample rate range (0 Hz to 3.2 MHz)
+const SAMPLE_RATE_MIN: u32 = 0;
+const SAMPLE_RATE_MAX: u32 = 3_200_000;
+
+/// Valid PPM correction range (-200 to 200)
+const PPM_MIN: i32 = -200;
+const PPM_MAX: i32 = 200;
+
+/// Valid tuner gain range (0 to 500, representing 0 to 50 dB in 0.1 dB steps)
+const TUNER_GAIN_MIN: i32 = 0;
+const TUNER_GAIN_MAX: i32 = 500;
+
+/// Minimum interval between commands to prevent flooding (50 ms)
+const COMMAND_RATE_LIMIT_INTERVAL: Duration = Duration::from_millis(50);
+
 /// Execute an operation on the device control handle, handling mutex poisoning gracefully.
 fn with_control<T, F>(ctl: &Mutex<T>, op: F)
 where
@@ -39,6 +59,76 @@ where
     }
 }
 
+/// Validate a frequency value, returning an error message if out of bounds.
+fn validate_frequency(freq: u32) -> Result<(), String> {
+    if freq < FREQ_MIN || freq > FREQ_MAX {
+        Err(format!("frequency {freq} Hz out of range ({FREQ_MIN}-{FREQ_MAX})"))
+    } else {
+        Ok(())
+    }
+}
+
+/// Validate a sample rate value, returning an error message if out of bounds.
+fn validate_sample_rate(rate: u32) -> Result<(), String> {
+    if rate < SAMPLE_RATE_MIN || rate > SAMPLE_RATE_MAX {
+        Err(format!(
+            "sample rate {rate} Hz out of range ({SAMPLE_RATE_MIN}-{SAMPLE_RATE_MAX})"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Validate a PPM correction value, returning an error message if out of bounds.
+fn validate_ppm(ppm: i32) -> Result<(), String> {
+    if ppm < PPM_MIN || ppm > PPM_MAX {
+        Err(format!("ppm {ppm} out of range ({PPM_MIN}-{PPM_MAX})"))
+    } else {
+        Ok(())
+    }
+}
+
+/// Validate a tuner gain value, returning an error message if out of bounds.
+fn validate_tuner_gain(gain: i32) -> Result<(), String> {
+    if gain < TUNER_GAIN_MIN || gain > TUNER_GAIN_MAX {
+        Err(format!(
+            "tuner gain {gain} out of range ({TUNER_GAIN_MIN}-{TUNER_GAIN_MAX})"
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Simple rate limiter that tracks the time of the last allowed command.
+struct RateLimiter {
+    last_command: Instant,
+    min_interval: Duration,
+}
+
+impl RateLimiter {
+    fn new(min_interval: Duration) -> Self {
+        Self {
+            last_command: Instant::now()
+                .checked_sub(min_interval)
+                .unwrap_or_else(|| Instant::now()),
+            min_interval,
+        }
+    }
+
+    /// Check if a command is allowed under the rate limit.
+    /// Returns true if allowed, false if the command should be rejected.
+    fn check(&mut self) -> bool {
+        let now = Instant::now();
+        let elapsed = now.saturating_duration_since(self.last_command);
+        if elapsed >= self.min_interval {
+            self.last_command = now;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[clap(
     author,
@@ -48,7 +138,7 @@ where
 )]
 struct Args {
     /// listen address
-    #[clap(short, long, default_value = "[::]")]
+    #[clap(short, long, default_value = "127.0.0.1")]
     address: String,
 
     /// listen port
@@ -66,6 +156,14 @@ struct Args {
     /// tcp sending buffer size (in bytes)
     #[clap(short, long, default_value_t = 512000)]
     tcp_buffers: usize,
+
+    /// socket read timeout in seconds
+    #[clap(long, default_value_t = 30)]
+    read_timeout: u64,
+
+    /// socket write timeout in seconds
+    #[clap(long, default_value_t = 30)]
+    write_timeout: u64,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -79,6 +177,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.tcp_buffers == 0 || args.tcp_buffers > 10_485_760 {
         return Err("tcp_buffers must be between 1 and 10485760 (10MB)".into());
+    }
+    if args.read_timeout == 0 {
+        return Err("read_timeout must be greater than 0".into());
+    }
+    if args.write_timeout == 0 {
+        return Err("write_timeout must be greater than 0".into());
+    }
+
+    // Warn when binding to all interfaces
+    let is_all_interfaces = args.address == "0.0.0.0"
+        || args.address == "::"
+        || args.address == "[::]"
+        || args.address.is_empty();
+    if is_all_interfaces {
+        warn!(
+            "binding to all interfaces ({}) — this exposes the server to all network interfaces",
+            args.address
+        );
     }
 
     let listener;
@@ -115,11 +231,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }).map_err(|e| format!("could not set signal handler: {e}"))?;
 
+    let read_timeout = Duration::from_secs(args.read_timeout);
+    let write_timeout = Duration::from_secs(args.write_timeout);
+
     info!("waiting for connection…");
     let (stream, addr) = listener.accept()?;
     info!("connection from {addr}");
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
-    stream.set_write_timeout(Some(std::time::Duration::from_secs(30)))?;
+    stream.set_read_timeout(Some(read_timeout))?;
+    stream.set_write_timeout(Some(write_timeout))?;
     let (ctl, mut reader) =
         rtlsdr_mt::open(args.device_index).map_err(|e| format!("could not open RTL-SDR device: {e:?}"))?;
     let ctl = Arc::new(Mutex::new(ctl));
@@ -130,6 +249,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut stream = stream.try_clone()?;
         move || {
             let mut buf = [0u8; COMMAND_HEADER_SIZE];
+            let mut rate_limiter = RateLimiter::new(COMMAND_RATE_LIMIT_INTERVAL);
             loop {
                 match stream.read_exact(&mut buf) {
                     Ok(()) => {}
@@ -152,12 +272,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     break;
                 }
 
+                // Rate limiting check
+                if !rate_limiter.check() {
+                    debug!("command rate limited, skipping");
+                    continue;
+                }
+
                 let cmd = buf[0];
                 let payload: [u8; 4] = [buf[1], buf[2], buf[3], buf[4]];
 
                 match cmd {
                     CMD_SET_FREQUENCY => {
                         let freq = u32::from_be_bytes(payload);
+                        if let Err(e) = validate_frequency(freq) {
+                            warn!("invalid frequency: {e}");
+                            continue;
+                        }
                         info!("setting center freq to {freq}");
                         with_control(&ctl, |guard| {
                             if let Err(e) = guard.set_center_freq(freq) {
@@ -167,6 +297,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     CMD_SET_SAMPLE_RATE => {
                         let sample_rate = u32::from_be_bytes(payload);
+                        if let Err(e) = validate_sample_rate(sample_rate) {
+                            warn!("invalid sample rate: {e}");
+                            continue;
+                        }
                         info!("setting sample rate to {sample_rate}");
                         with_control(&ctl, |guard| {
                             if let Err(e) = guard.set_sample_rate(sample_rate) {
@@ -194,6 +328,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     CMD_SET_TUNER_GAIN => {
                         let gain = i32::from_be_bytes(payload);
+                        if let Err(e) = validate_tuner_gain(gain) {
+                            warn!("invalid tuner gain: {e}");
+                            continue;
+                        }
                         info!("setting manual gain to {gain}");
                         with_control(&ctl, |guard| {
                             if let Err(e) = guard.set_tuner_gain(gain) {
@@ -203,6 +341,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     CMD_SET_PPM => {
                         let ppm = i32::from_be_bytes(payload);
+                        if let Err(e) = validate_ppm(ppm) {
+                            warn!("invalid ppm: {e}");
+                            continue;
+                        }
                         info!("setting ppm to {ppm}");
                         with_control(&ctl, |guard| {
                             if let Err(e) = guard.set_ppm(ppm) {
@@ -317,8 +459,8 @@ mod tests {
 
     #[test]
     fn test_parse_frequency_command() {
-        // Command 0x01 with frequency 100.5 MHz (0x05FD4C80 in big-endian)
-        let buf: [u8; 5] = [0x01, 0x05, 0xFD, 0x4C, 0x80];
+        // Command 0x01 with frequency 100.5 MHz (0x05FD8220 in big-endian)
+        let buf: [u8; 5] = [0x01, 0x05, 0xFD, 0x82, 0x20];
         assert_eq!(buf[0], CMD_SET_FREQUENCY);
         let freq = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
         assert_eq!(freq, 100_500_000);
@@ -391,5 +533,93 @@ mod tests {
         assert_ne!(buf[0], CMD_SET_TUNER_GAIN);
         assert_ne!(buf[0], CMD_SET_PPM);
         assert_ne!(buf[0], CMD_SET_AGC);
+    }
+
+    // --- Input validation tests (1.2) ---
+
+    #[test]
+    fn test_validate_frequency_valid() {
+        assert!(validate_frequency(0).is_ok());
+        assert!(validate_frequency(100_000_000).is_ok());
+        assert!(validate_frequency(2_200_000_000).is_ok());
+    }
+
+    #[test]
+    fn test_validate_frequency_invalid() {
+        // Frequencies above max (but since u32 wraps, we just check the max boundary)
+        // u32::MAX is above FREQ_MAX
+        assert!(validate_frequency(FREQ_MAX + 1).is_err());
+        assert!(validate_frequency(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn test_validate_sample_rate_valid() {
+        assert!(validate_sample_rate(0).is_ok());
+        assert!(validate_sample_rate(2_048_000).is_ok());
+        assert!(validate_sample_rate(3_200_000).is_ok());
+    }
+
+    #[test]
+    fn test_validate_sample_rate_invalid() {
+        assert!(validate_sample_rate(SAMPLE_RATE_MAX + 1).is_err());
+        assert!(validate_sample_rate(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn test_validate_ppm_valid() {
+        assert!(validate_ppm(0).is_ok());
+        assert!(validate_ppm(-200).is_ok());
+        assert!(validate_ppm(200).is_ok());
+        assert!(validate_ppm(50).is_ok());
+        assert!(validate_ppm(-100).is_ok());
+    }
+
+    #[test]
+    fn test_validate_ppm_invalid() {
+        assert!(validate_ppm(PPM_MIN - 1).is_err());
+        assert!(validate_ppm(PPM_MAX + 1).is_err());
+        assert!(validate_ppm(-300).is_err());
+        assert!(validate_ppm(300).is_err());
+    }
+
+    #[test]
+    fn test_validate_tuner_gain_valid() {
+        assert!(validate_tuner_gain(0).is_ok());
+        assert!(validate_tuner_gain(30).is_ok());
+        assert!(validate_tuner_gain(500).is_ok());
+    }
+
+    #[test]
+    fn test_validate_tuner_gain_invalid() {
+        assert!(validate_tuner_gain(TUNER_GAIN_MIN - 1).is_err());
+        assert!(validate_tuner_gain(TUNER_GAIN_MAX + 1).is_err());
+        assert!(validate_tuner_gain(-10).is_err());
+        assert!(validate_tuner_gain(600).is_err());
+    }
+
+    // --- Rate limiter tests (1.3) ---
+
+    #[test]
+    fn test_rate_limiter_allows_after_interval() {
+        let mut limiter = RateLimiter::new(Duration::from_millis(10));
+        // First command should always be allowed (last_command set to before now)
+        assert!(limiter.check());
+    }
+
+    #[test]
+    fn test_rate_limiter_blocks_rapid_commands() {
+        let mut limiter = RateLimiter::new(Duration::from_millis(500));
+        // Consume the initial allowance
+        limiter.last_command = Instant::now();
+        // Immediate next call should be denied
+        assert!(!limiter.check());
+    }
+
+    #[test]
+    fn test_rate_limiter_allows_after_sleep() {
+        let mut limiter = RateLimiter::new(Duration::from_millis(10));
+        limiter.last_command = Instant::now();
+        std::thread::sleep(Duration::from_millis(15));
+        assert!(limiter.check());
     }
 }
