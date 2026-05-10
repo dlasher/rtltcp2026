@@ -5,12 +5,13 @@
 [![Crates.io](https://img.shields.io/crates/v/rtltcp.svg)](https://crates.io/crates/rtltcp)
 [![Rust Version](https://img.shields.io/badge/rust-1.74%2B-blue)](https://www.rust-lang.org)
 
-A production-ready Rust implementation of [rtl-tcp](https://github.com/pinkavaj/rtl-sdr/blob/master/src/rtl_tcp.c) with improved stability, better buffering, and support for systemd [socket activation](http://0pointer.de/blog/projects/socket-activation.html).
+A production-ready Rust implementation of [rtl-tcp](https://github.com/pinkavaj/rtl-sdr/blob/master/src/rtl_tcp.c) with improved stability, better buffering, security hardening, and support for systemd [socket activation](http://0pointer.de/blog/projects/socket-activation.html).
 
 ## Features
 
 - **Robust error handling** - No more crashes on client disconnect or device errors
 - **Graceful shutdown** - Proper cleanup of device resources and threads
+- **Security hardening** - Client logging, DoS protection, input validation
 - **Systemd socket activation** - Start on demand, keep USB dongle cool when idle
 - **Production tested** - Runs reliably on ARM devices (Odroid, Raspberry Pi)
 
@@ -22,13 +23,13 @@ Download the [latest release](https://github.com/FirebirdRender/rtltcp/releases)
 
 ```bash
 # x86_64 Linux
-wget https://github.com/FirebirdRender/rtltcp/releases/download/0.2.0/rtltcp-linux-x86_64.tar.gz
+wget https://github.com/FirebirdRender/rtltcp/releases/download/0.2.1/rtltcp-linux-x86_64.tar.gz
 tar xzf rtltcp-linux-x86_64.tar.gz
 sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
 
 # ARM64 (aarch64)
-wget https://github.com/FirebirdRender/rtltcp/releases/download/0.2.0/rtltcp-linux-arm64.tar.gz
+wget https://github.com/FirebirdRender/rtltcp/releases/download/0.2.1/rtltcp-linux-arm64.tar.gz
 tar xzf rtltcp-linux-arm64.tar.gz
 sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
@@ -53,7 +54,7 @@ sudo cp target/release/rtltcp /usr/local/bin/
 ### Command Line Options
 
 ```
-rtltcp 0.2.0
+rtltcp 0.2.1
 an I/Q spectrum server for RTL2832 based DVB-T receivers
 
 USAGE:
@@ -63,8 +64,8 @@ OPTIONS:
     -a, --address <ADDRESS>     listen address [default: [::]]
     -p, --port <PORT>           listen port [default: 1234]
     -d, --device-index <INDEX>  device index [default: 0]
-    -b, --buffers <COUNT>       number of decoding buffers [default: 15]
-    -s, --tcp-buffers <SIZE>    tcp sending buffer size (bytes) [default: 512000]
+    -b, --buffers <COUNT>       number of decoding buffers [default: 15, range: 1-32]
+    -s, --tcp-buffers <SIZE>    tcp sending buffer size (bytes) [default: 512000, range: 1-10485760]
     -h, --help                  Print help
     -V, --version               Print version
 ```

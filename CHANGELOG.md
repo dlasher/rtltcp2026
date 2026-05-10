@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-10
+
+### Added
+- Client IP address logging on connection for security auditing
+- Read/write timeout protection against Slowloris DoS attacks
+- Input validation with bounds checking for CLI arguments
+- Comprehensive unit tests for all protocol command parsing
+- Protocol parsing tests for unknown commands
+
+### Changed
+- Replaced duplicated mutex handling with `with_control` helper function
+- Enhanced error logging to include actual error messages instead of discarding them
+- Improved error context on device and system calls with proper error chaining
+- Fixed cross-compilation workflow to properly build all target platforms
+- Added MSRV verification job to CI pipeline
+- Enhanced streaming failure logging with error details
+
+### Fixed
+- Critical crash issues that caused panics on client disconnects
+- Command 0x03 logic error where manual gain incorrectly enabled AGC
+- Mutex poisoning and channel deadlock problems
+- Error values silently discarded in device operations
+
+### Security
+- Added client IP address logging for audit trail
+- Added 30-second read/write timeouts to prevent DoS attacks
+- Enhanced input validation with reasonable bounds for all CLI arguments
+
 ## [0.2.0] - 2026-05-10
 
 ### Added

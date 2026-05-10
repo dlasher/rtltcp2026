@@ -11,34 +11,6 @@ use clap::Parser;
 use listenfd::ListenFd;
 use tracing::{debug, info, warn};
 
-/// Custom error type for rtltcp
-#[derive(Debug)]
-enum Error {
-    Io(std::io::Error),
-    DeviceOpen(String),
-    ChannelSend,
-    MutexPoisoned,
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Io(e) => write!(f, "I/O error: {e}"),
-            Error::DeviceOpen(msg) => write!(f, "device error: {msg}"),
-            Error::ChannelSend => write!(f, "channel send failed"),
-            Error::MutexPoisoned => write!(f, "mutex poisoned"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Error::Io(e)
-    }
-}
-
 /// RTL-TCP protocol command codes
 const COMMAND_HEADER_SIZE: usize = 5;
 const CMD_SET_FREQUENCY: u8 = 0x01;
@@ -53,20 +25,17 @@ const CMD_SET_AGC: u8 = 0x08;
 const MAGIC_PACKET: &[u8] = b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d";
 
 /// Execute an operation on the device control handle, handling mutex poisoning gracefully.
-fn with_control<F>(ctl: &Mutex<rtlsdr_mt::RtlSdr>, op: F) -> Result<(), ()>
+fn with_control<T, F>(ctl: &Mutex<T>, op: F)
 where
-    F: FnOnce(&mut rtlsdr_mt::RtlSdr) -> Result<(), rtlsdr_mt::Error>,
+    T: std::ops::DerefMut,
+    F: FnOnce(&mut T::Target),
 {
     match ctl.lock() {
         Ok(mut guard) => {
-            if let Err(e) = op(&mut guard) {
-                warn!("device operation failed: {e}");
-            }
-            Ok(())
+            op(&mut *guard);
         }
         Err(_) => {
             warn!("mutex poisoned in control thread");
-            Err(())
         }
     }
 }
@@ -92,18 +61,26 @@ struct Args {
     device_index: u32,
 
     /// number of decoding buffers
-    #[clap(short, long, default_value_t = 15, value_parser = clap::value_parser!(u32).range(1..=32))]
+    #[clap(short, long, default_value_t = 15)]
     buffers: u32,
 
     /// tcp sending buffer size (in bytes)
-    #[clap(short, long, default_value_t = 512000, value_parser = clap::value_parser!(usize).range(1..=10_485_760))]
+    #[clap(short, long, default_value_t = 512000)]
     tcp_buffers: usize,
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
+
+    // Validate buffers and tcp_buffers manually
+    if args.buffers == 0 || args.buffers > 32 {
+        return Err("buffers must be between 1 and 32".into());
+    }
+    if args.tcp_buffers == 0 || args.tcp_buffers > 10_485_760 {
+        return Err("tcp_buffers must be between 1 and 10485760 (10MB)".into());
+    }
 
     let listener;
     #[cfg(feature = "systemd")]
@@ -137,7 +114,7 @@ fn main() -> Result<(), Error> {
                 should_exit_ctrlc.store(true, Ordering::SeqCst);
             }
         }
-    })?;
+    }).map_err(|e| format!("could not set signal handler: {e}"))?;
 
     info!("waiting for connection…");
     let (stream, addr) = listener.accept()?;
@@ -145,7 +122,7 @@ fn main() -> Result<(), Error> {
     stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
     stream.set_write_timeout(Some(std::time::Duration::from_secs(30)))?;
     let (ctl, mut reader) =
-        rtlsdr_mt::open(args.device_index).map_err(|e| format!("could not open RTL-SDR device: {e}"))?;
+        rtlsdr_mt::open(args.device_index).map_err(|e| format!("could not open RTL-SDR device: {e:?}"))?;
     let ctl = Arc::new(Mutex::new(ctl));
 
     let thread_ctl = std::thread::spawn({
@@ -183,41 +160,73 @@ fn main() -> Result<(), Error> {
                     CMD_SET_FREQUENCY => {
                         let freq = u32::from_be_bytes(payload);
                         info!("setting center freq to {freq}");
-                        let _ = with_control(&ctl, |guard| guard.set_center_freq(freq));
+                        with_control(&ctl, |guard| {
+                            if let Err(e) = guard.set_center_freq(freq) {
+                                warn!("failed to set center freq: {e:?}");
+                            }
+                        });
                     }
                     CMD_SET_SAMPLE_RATE => {
                         let sample_rate = u32::from_be_bytes(payload);
                         info!("setting sample rate to {sample_rate}");
-                        let _ = with_control(&ctl, |guard| guard.set_sample_rate(sample_rate));
+                        with_control(&ctl, |guard| {
+                            if let Err(e) = guard.set_sample_rate(sample_rate) {
+                                warn!("failed to set sample rate: {e:?}");
+                            }
+                        });
                     }
                     CMD_SET_GAIN_MODE => {
                         let gain_mode = i32::from_be_bytes(payload);
                         if gain_mode > 0 {
                             info!("gain mode set to manual (AGC off)");
-                            let _ = with_control(&ctl, |guard| guard.disable_agc());
+                            with_control(&ctl, |guard| {
+                                if let Err(e) = guard.disable_agc() {
+                                    warn!("failed to disable AGC: {e:?}");
+                                }
+                            });
                         } else {
                             info!("gain mode set to automatic (AGC on)");
-                            let _ = with_control(&ctl, |guard| guard.enable_agc());
+                            with_control(&ctl, |guard| {
+                                if let Err(e) = guard.enable_agc() {
+                                    warn!("failed to enable AGC: {e:?}");
+                                }
+                            });
                         }
                     }
                     CMD_SET_TUNER_GAIN => {
                         let gain = i32::from_be_bytes(payload);
                         info!("setting manual gain to {gain}");
-                        let _ = with_control(&ctl, |guard| guard.set_tuner_gain(gain));
+                        with_control(&ctl, |guard| {
+                            if let Err(e) = guard.set_tuner_gain(gain) {
+                                warn!("failed to set tuner gain: {e:?}");
+                            }
+                        });
                     }
                     CMD_SET_PPM => {
                         let ppm = i32::from_be_bytes(payload);
                         info!("setting ppm to {ppm}");
-                        let _ = with_control(&ctl, |guard| guard.set_ppm(ppm));
+                        with_control(&ctl, |guard| {
+                            if let Err(e) = guard.set_ppm(ppm) {
+                                warn!("failed to set ppm: {e:?}");
+                            }
+                        });
                     }
                     CMD_SET_AGC => {
                         let agc = u32::from_be_bytes(payload) == 1u32;
                         if agc {
                             info!("setting automatic gain control to on");
-                            let _ = with_control(&ctl, |guard| guard.enable_agc());
+                            with_control(&ctl, |guard| {
+                                if let Err(e) = guard.enable_agc() {
+                                    warn!("failed to enable AGC: {e:?}");
+                                }
+                            });
                         } else {
                             info!("setting automatic gain control to off");
-                            let _ = with_control(&ctl, |guard| guard.disable_agc());
+                            with_control(&ctl, |guard| {
+                                if let Err(e) = guard.disable_agc() {
+                                    warn!("failed to disable AGC: {e:?}");
+                                }
+                            });
                         }
                     }
                     _ => {
@@ -256,7 +265,7 @@ fn main() -> Result<(), Error> {
     let _ = sender.try_send(());
 
     if let Err(e) = read_result {
-        warn!("read_async error: {e}");
+        warn!("read_async error: {e:?}");
     }
 
     // Flush buffer before shutting down
