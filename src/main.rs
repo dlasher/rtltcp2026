@@ -27,8 +27,7 @@ const MAGIC_PACKET: &[u8] = b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d";
 /// Execute an operation on the device control handle, handling mutex poisoning gracefully.
 fn with_control<T, F>(ctl: &Mutex<T>, op: F)
 where
-    T: std::ops::DerefMut,
-    F: FnOnce(&mut T::Target),
+    F: FnOnce(&mut T),
 {
     match ctl.lock() {
         Ok(mut guard) => {
