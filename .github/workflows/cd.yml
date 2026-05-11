@@ -19,6 +19,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          sudo apt update
+          sudo apt-get install -y librtlsdr-dev libsystemd-dev
+
       - name: Build for x86_64 (native)
         run: cargo build --release --target x86_64-unknown-linux-gnu
 
