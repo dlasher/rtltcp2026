@@ -46,8 +46,11 @@ jobs:
       - name: Release
         shell: bash
         run: |
-          gh release create "$GITHUB_REF" --title "$GITHUB_REF" --notes "Release $(date)" --draft=false
-          gh release upload "$GITHUB_REF" rtltcp-${GITHUB_REF#refs/tags/}-linux-x86_64.tar.gz rtltcp-${GITHUB_REF#refs/tags/}-linux-x86_64.sha256 --clobber
+          gh release create "$GITHUB_REF" \
+            --title "$GITHUB_REF" \
+            --notes "Release $(date)" \
+            rtltcp-${GITHUB_REF#refs/tags/}-linux-x86_64.tar.gz \
+            rtltcp-${GITHUB_REF#refs/tags/}-linux-x86_64.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
