@@ -1,7 +1,7 @@
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::io::ErrorKind;
-use std::net::{IpAddr, TcpListener, Shutdown, SocketAddr};
+use std::net::{IpAddr, TcpListener, Shutdown};
 use std::result::Result as StdResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
