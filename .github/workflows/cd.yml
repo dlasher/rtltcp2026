@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           sudo apt update
-          sudo apt-get install -y librtlsdr-dev libsystemd-dev gcc-aarch64-linux-gnu
+          sudo apt-get install -y librtlsdr-dev libsystemd-dev gcc-aarch64-linux-gnu pkg-config-aarch64-linux-gnu
 
       - name: Build for x86_64 (native)
         run: cargo build --release --target x86_64-unknown-linux-gnu
@@ -36,14 +36,9 @@ jobs:
           tar czvf "$RELEASE_NAME.tar.gz" -C target/x86_64-unknown-linux-gnu/release rtltcp
           sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
 
-      - name: Set up aarch64 cross-compile environment
-        shell: bash
-        run: |
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          echo "CROSS_COMPILE=$CROSS_COMPILE" >> $GITHUB_ENV
-
       - name: Build for aarch64 (cross-compiled)
         env:
+          PKG_CONFIG: aarch64-linux-gnu-pkg-config
           PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
         run: cargo build --release --target aarch64-unknown-linux-gnu
 
