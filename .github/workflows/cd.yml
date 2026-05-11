@@ -49,12 +49,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  publish:
-    name: Publishing to Cargo
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CARGO_API_KEY }}
+  
