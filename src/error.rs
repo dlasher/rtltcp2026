@@ -5,25 +5,25 @@ use std::fmt;
 #[derive(Debug)]
 pub enum RtlTcpError {
     /// Device-related errors
-    DeviceError(String),
+    Device(String),
     /// Network-related errors
-    NetworkError(String),
+    Network(String),
     /// Configuration errors
-    ConfigError(String),
+    Config(String),
     /// Validation errors
-    ValidationError(String),
+    Validation(String),
     /// I/O errors
-    IoError(std::io::Error),
+    Io(std::io::Error),
 }
 
 impl fmt::Display for RtlTcpError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RtlTcpError::DeviceError(msg) => write!(f, "Device error: {}", msg),
-            RtlTcpError::NetworkError(msg) => write!(f, "Network error: {}", msg),
-            RtlTcpError::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
-            RtlTcpError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
-            RtlTcpError::IoError(e) => write!(f, "I/O error: {}", e),
+            RtlTcpError::Device(msg) => write!(f, "Device error: {}", msg),
+            RtlTcpError::Network(msg) => write!(f, "Network error: {}", msg),
+            RtlTcpError::Config(msg) => write!(f, "Configuration error: {}", msg),
+            RtlTcpError::Validation(msg) => write!(f, "Validation error: {}", msg),
+            RtlTcpError::Io(e) => write!(f, "I/O error: {}", e),
         }
     }
 }
@@ -32,12 +32,12 @@ impl std::error::Error for RtlTcpError {}
 
 impl From<std::io::Error> for RtlTcpError {
     fn from(error: std::io::Error) -> Self {
-        RtlTcpError::IoError(error)
+        RtlTcpError::Io(error)
     }
 }
 
 impl From<Box<dyn std::error::Error>> for RtlTcpError {
     fn from(error: Box<dyn std::error::Error>) -> Self {
-        RtlTcpError::DeviceError(error.to_string())
+        RtlTcpError::Device(error.to_string())
     }
 }

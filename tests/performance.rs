@@ -2,8 +2,6 @@
 //!
 //! This module contains performance tests and edge case scenarios.
 
-use std::time::Duration;
-
 /// Test performance with throughput testing
 #[test]
 fn test_throughput_performance() {
@@ -66,6 +64,7 @@ fn test_mock_device_abstraction() {
 }
 
 // Helper functions for validation
+#[allow(dead_code)]
 fn validate_frequency(freq: u32) -> Result<(), String> {
     if freq > 2_200_000_000 {
         Err("frequency out of range".to_string())
@@ -74,6 +73,7 @@ fn validate_frequency(freq: u32) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 fn validate_sample_rate(rate: u32) -> Result<(), String> {
     if rate > 3_200_000 {
         Err("sample rate out of range".to_string())

@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::ops::RangeInclusive;
 
 use clap::Parser;
 #[cfg(feature = "systemd")]
@@ -33,18 +34,22 @@ const MAGIC_PACKET: &[u8] = b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d";
 /// Valid frequency range for RTL-SDR devices (0 Hz to 2.2 GHz)
 const FREQ_MIN: u32 = 0;
 const FREQ_MAX: u32 = 2_200_000_000;
+const FREQ_RANGE: RangeInclusive<u32> = FREQ_MIN..=FREQ_MAX;
 
 /// Valid sample rate range (0 Hz to 3.2 MHz)
 const SAMPLE_RATE_MIN: u32 = 0;
 const SAMPLE_RATE_MAX: u32 = 3_200_000;
+const SAMPLE_RATE_RANGE: RangeInclusive<u32> = SAMPLE_RATE_MIN..=SAMPLE_RATE_MAX;
 
 /// Valid PPM correction range (-200 to 200)
 const PPM_MIN: i32 = -200;
 const PPM_MAX: i32 = 200;
+const PPM_RANGE: RangeInclusive<i32> = PPM_MIN..=PPM_MAX;
 
 /// Valid tuner gain range (0 to 500, representing 0 to 50 dB in 0.1 dB steps)
 const TUNER_GAIN_MIN: i32 = 0;
 const TUNER_GAIN_MAX: i32 = 500;
+const TUNER_GAIN_RANGE: RangeInclusive<i32> = TUNER_GAIN_MIN..=TUNER_GAIN_MAX;
 
 /// Minimum interval between commands to prevent flooding (50 ms)
 const COMMAND_RATE_LIMIT_INTERVAL: Duration = Duration::from_millis(50);
@@ -66,7 +71,7 @@ where
 
 /// Validate a frequency value, returning an error message if out of bounds.
 fn validate_frequency(freq: u32) -> Result<(), String> {
-    if freq < FREQ_MIN || freq > FREQ_MAX {
+    if !FREQ_RANGE.contains(&freq) {
         Err(format!("frequency {freq} Hz out of range ({FREQ_MIN}-{FREQ_MAX})"))
     } else {
         Ok(())
@@ -75,7 +80,7 @@ fn validate_frequency(freq: u32) -> Result<(), String> {
 
 /// Validate a sample rate value, returning an error message if out of bounds.
 fn validate_sample_rate(rate: u32) -> Result<(), String> {
-    if rate < SAMPLE_RATE_MIN || rate > SAMPLE_RATE_MAX {
+    if !SAMPLE_RATE_RANGE.contains(&rate) {
         Err(format!(
             "sample rate {rate} Hz out of range ({SAMPLE_RATE_MIN}-{SAMPLE_RATE_MAX})"
         ))
@@ -86,7 +91,7 @@ fn validate_sample_rate(rate: u32) -> Result<(), String> {
 
 /// Validate a PPM correction value, returning an error message if out of bounds.
 fn validate_ppm(ppm: i32) -> Result<(), String> {
-    if ppm < PPM_MIN || ppm > PPM_MAX {
+    if !PPM_RANGE.contains(&ppm) {
         Err(format!("ppm {ppm} out of range ({PPM_MIN}-{PPM_MAX})"))
     } else {
         Ok(())
@@ -95,7 +100,7 @@ fn validate_ppm(ppm: i32) -> Result<(), String> {
 
 /// Validate a tuner gain value, returning an error message if out of bounds.
 fn validate_tuner_gain(gain: i32) -> Result<(), String> {
-    if gain < TUNER_GAIN_MIN || gain > TUNER_GAIN_MAX {
+    if !TUNER_GAIN_RANGE.contains(&gain) {
         Err(format!(
             "tuner gain {gain} out of range ({TUNER_GAIN_MIN}-{TUNER_GAIN_MAX})"
         ))
@@ -143,7 +148,7 @@ impl RateLimiter {
         Self {
             last_command: Instant::now()
                 .checked_sub(min_interval)
-                .unwrap_or_else(|| Instant::now()),
+                .unwrap_or(Instant::now()),
             min_interval,
         }
     }
@@ -210,16 +215,16 @@ fn main() -> StdResult<(), RtlTcpError> {
 
     // Validate buffers and tcp_buffers manually
     if args.buffers == 0 || args.buffers > 32 {
-        return Err(RtlTcpError::ConfigError("buffers must be between 1 and 32".to_string()));
+        return Err(RtlTcpError::Config("buffers must be between 1 and 32".to_string()));
     }
     if args.tcp_buffers == 0 || args.tcp_buffers > 10_485_760 {
-        return Err(RtlTcpError::ConfigError("tcp_buffers must be between 1 and 10485760 (10MB)".to_string()));
+        return Err(RtlTcpError::Config("tcp_buffers must be between 1 and 10485760 (10MB)".to_string()));
     }
     if args.read_timeout == 0 {
-        return Err(RtlTcpError::ConfigError("read_timeout must be greater than 0".to_string()));
+        return Err(RtlTcpError::Config("read_timeout must be greater than 0".to_string()));
     }
     if args.write_timeout == 0 {
-        return Err(RtlTcpError::ConfigError("write_timeout must be greater than 0".to_string()));
+        return Err(RtlTcpError::Config("write_timeout must be greater than 0".to_string()));
     }
 
     // Warn when binding to all interfaces
@@ -240,7 +245,7 @@ fn main() -> StdResult<(), RtlTcpError> {
         let mut listenfd = ListenFd::from_env();
         listener = if let Some(listener) = listenfd
             .take_tcp_listener(0)
-            .map_err(|e| RtlTcpError::ConfigError(format!("could not get file descriptor from environment: {e}")))?
+            .map_err(|e| RtlTcpError::Config(format!("could not get file descriptor from environment: {e}")))?
         {
             listener
         } else {
@@ -291,7 +296,7 @@ info!("waiting for connection…");
     let stream_for_shutdown_ctrlc = stream_for_shutdown.clone();
 
     let (ctl, mut reader) =
-        rtlsdr_mt::open(args.device_index).map_err(|e| RtlTcpError::DeviceError(format!("could not open RTL-SDR device: {e:?}")))?;
+        rtlsdr_mt::open(args.device_index).map_err(|e| RtlTcpError::Device(format!("could not open RTL-SDR device: {e:?}")))?;
     let ctl = Arc::new(Mutex::new(ctl));
 
     ctrlc::set_handler(move || {
@@ -311,7 +316,7 @@ info!("waiting for connection…");
                 let _ = stream.shutdown(Shutdown::Both);
             }
         }
-    }).map_err(|e| RtlTcpError::ConfigError(format!("could not set signal handler: {e}")))?;
+    }).map_err(|e| RtlTcpError::Config(format!("could not set signal handler: {e}")))?;
 
     // Task 2.3: Track unknown commands for better visibility
     let unknown_command_count = Arc::new(Mutex::new(0u64));

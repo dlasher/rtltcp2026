@@ -7,6 +7,7 @@ use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::process::Command;
 use std::thread;
+use std::ops::RangeInclusive;
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -102,19 +103,23 @@ const MAGIC_PACKET: &[u8] = b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d";
 /// Valid ranges (must match main.rs)
 const FREQ_MIN: u32 = 0;
 const FREQ_MAX: u32 = 2_200_000_000;
+const FREQ_RANGE: RangeInclusive<u32> = FREQ_MIN..=FREQ_MAX;
 const SAMPLE_RATE_MIN: u32 = 0;
 const SAMPLE_RATE_MAX: u32 = 3_200_000;
+const SAMPLE_RATE_RANGE: RangeInclusive<u32> = SAMPLE_RATE_MIN..=SAMPLE_RATE_MAX;
 const PPM_MIN: i32 = -200;
 const PPM_MAX: i32 = 200;
+const PPM_RANGE: RangeInclusive<i32> = PPM_MIN..=PPM_MAX;
 const TUNER_GAIN_MIN: i32 = 0;
 const TUNER_GAIN_MAX: i32 = 500;
+const TUNER_GAIN_RANGE: RangeInclusive<i32> = TUNER_GAIN_MIN..=TUNER_GAIN_MAX;
 
 // ============================================================================
 // Validation Functions (mirroring main.rs)
 // ============================================================================
 
 fn validate_frequency(freq: u32) -> Result<(), String> {
-    if freq < FREQ_MIN || freq > FREQ_MAX {
+    if !FREQ_RANGE.contains(&freq) {
         Err(format!("frequency {freq} Hz out of range ({FREQ_MIN}-{FREQ_MAX})"))
     } else {
         Ok(())
@@ -122,7 +127,7 @@ fn validate_frequency(freq: u32) -> Result<(), String> {
 }
 
 fn validate_sample_rate(rate: u32) -> Result<(), String> {
-    if rate < SAMPLE_RATE_MIN || rate > SAMPLE_RATE_MAX {
+    if !SAMPLE_RATE_RANGE.contains(&rate) {
         Err(format!(
             "sample rate {rate} Hz out of range ({SAMPLE_RATE_MIN}-{SAMPLE_RATE_MAX})"
         ))
@@ -132,7 +137,7 @@ fn validate_sample_rate(rate: u32) -> Result<(), String> {
 }
 
 fn validate_ppm(ppm: i32) -> Result<(), String> {
-    if ppm < PPM_MIN || ppm > PPM_MAX {
+    if !PPM_RANGE.contains(&ppm) {
         Err(format!("ppm {ppm} out of range ({PPM_MIN}-{PPM_MAX})"))
     } else {
         Ok(())
@@ -140,7 +145,7 @@ fn validate_ppm(ppm: i32) -> Result<(), String> {
 }
 
 fn validate_tuner_gain(gain: i32) -> Result<(), String> {
-    if gain < TUNER_GAIN_MIN || gain > TUNER_GAIN_MAX {
+    if !TUNER_GAIN_RANGE.contains(&gain) {
         Err(format!(
             "tuner gain {gain} out of range ({TUNER_GAIN_MIN}-{TUNER_GAIN_MAX})"
         ))
@@ -493,7 +498,7 @@ impl RateLimiter {
         Self {
             last_command: Instant::now()
                 .checked_sub(min_interval)
-                .unwrap_or_else(|| Instant::now()),
+                .unwrap_or(Instant::now()),
             min_interval,
         }
     }
@@ -792,19 +797,19 @@ fn test_all_commands_invalid_inputs() {
 #[test]
 fn test_zero_payload_commands() {
     // All commands with zero payload should be valid where applicable
-    let zero_buf: [u8; 5] = [CMD_SET_FREQUENCY, 0, 0, 0, 0];
+    let _zero_buf: [u8; 5] = [CMD_SET_FREQUENCY, 0, 0, 0, 0];
     let freq = u32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_frequency(freq).is_ok());
     
-    let zero_buf: [u8; 5] = [CMD_SET_SAMPLE_RATE, 0, 0, 0, 0];
+    let _zero_buf: [u8; 5] = [CMD_SET_SAMPLE_RATE, 0, 0, 0, 0];
     let sr = u32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_sample_rate(sr).is_ok());
     
-    let zero_buf: [u8; 5] = [CMD_SET_PPM, 0, 0, 0, 0];
+    let _zero_buf: [u8; 5] = [CMD_SET_PPM, 0, 0, 0, 0];
     let ppm = i32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_ppm(ppm).is_ok());
     
-    let zero_buf: [u8; 5] = [CMD_SET_TUNER_GAIN, 0, 0, 0, 0];
+    let _zero_buf: [u8; 5] = [CMD_SET_TUNER_GAIN, 0, 0, 0, 0];
     let gain = i32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_tuner_gain(gain).is_ok());
 }
@@ -892,8 +897,8 @@ fn test_validation_performance() {
     for i in 0..iterations {
         let _ = validate_frequency(i as u32 % FREQ_MAX);
         let _ = validate_sample_rate(i as u32 % SAMPLE_RATE_MAX);
-        let _ = validate_ppm((i as i32 % 400) - 200);
-        let _ = validate_tuner_gain((i as i32 % 600) - 50);
+        let _ = validate_ppm((i % 400) - 200);
+        let _ = validate_tuner_gain((i % 600) - 50);
     }
     
     let elapsed = start.elapsed();

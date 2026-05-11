@@ -5,18 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-05-11
+
+### Fixed
+- **Clippy lint fixes**: Renamed error variants from `*Error` to without suffix to fix `clippy::enum_variant_names`
+- **Clippy lint fixes**: Replaced manual range checks with `RangeInclusive::contains()` method and defined range constants
+- **Clippy lint fixes**: Replaced `unwrap_or_else` with `unwrap_or` in RateLimiter for performance improvement
+- **Clippy lint fixes**: Removed unnecessary `i32 as i32` casts and renamed unused variables in tests
+
+### Security
+- **Dependency pinning**: All dependencies pinned to exact versions (`=X.Y.Z`) for reproducible builds
+- **Security gate**: Added `fail_on_advisories: true` to audit.yml workflow to fail on security vulnerabilities
+
 ## [0.6.0] - 2026-05-10
-
-### Added
-- IP whitelist/allowlist feature with `--whitelist` option (CIDR notation)
-- Connection filtering based on IP whitelist for enhanced security
-- Warning logs for rejected connections due to IP not in whitelist
-- Unit tests for whitelist functionality
-
-### Changed
-- Updated documentation to reflect new whitelist feature
-
-## [0.5.0] - 2026-05-10
 
 ### Added
 - Comprehensive test coverage with 150+ test cases across all modules
