@@ -1,7 +1,8 @@
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::io::ErrorKind;
-use std::net::{TcpListener, Shutdown};
+use std::net::{IpAddr, TcpListener, Shutdown, SocketAddr};
+use std::result::Result as StdResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
@@ -11,7 +12,7 @@ use clap::Parser;
 #[cfg(feature = "systemd")]
 use listenfd::ListenFd;
 use tracing::{debug, info, warn};
-use std::result::Result as StdResult;
+use ipnet::IpNet;
 
 mod error;
 use crate::error::RtlTcpError;
@@ -103,6 +104,34 @@ fn validate_tuner_gain(gain: i32) -> Result<(), String> {
     }
 }
 
+/// Check if an IP address is in the whitelist
+fn is_ip_in_whitelist(client_ip: &str, whitelist: &[String]) -> bool {
+    // Parse the client IP
+    let client_ip: IpAddr = match client_ip.parse() {
+        Ok(ip) => ip,
+        Err(_) => {
+            warn!(target: "rtltcp", "Invalid client IP: {}", client_ip);
+            return false;
+        }
+    };
+
+    // Check if any whitelist entry contains the IP
+    for cidr in whitelist {
+        match cidr.parse::<IpNet>() {
+            Ok(network) => {
+                if network.contains(&client_ip) {
+                    return true;
+                }
+            }
+            Err(e) => {
+                warn!(target: "rtltcp", "Invalid CIDR in whitelist: {} - {}", cidr, e);
+            }
+        }
+    }
+
+    false
+}
+
 /// Simple rate limiter that tracks the time of the last allowed command.
 struct RateLimiter {
     last_command: Instant,
@@ -168,6 +197,10 @@ struct Args {
     /// socket write timeout in seconds
     #[clap(long, default_value_t = 30)]
     write_timeout: u64,
+
+    /// IP whitelist (CIDR notation), e.g. 192.168.100.0/24 (can be specified multiple times)
+    #[clap(long)]
+    whitelist: Vec<String>,
 }
 
 fn main() -> StdResult<(), RtlTcpError> {
@@ -228,8 +261,25 @@ fn main() -> StdResult<(), RtlTcpError> {
     let read_timeout = Duration::from_secs(args.read_timeout);
     let write_timeout = Duration::from_secs(args.write_timeout);
 
-    info!("waiting for connection…");
+info!("waiting for connection…");
     let (stream, addr) = listener.accept()?;
+    
+    // Check if the client IP is in the whitelist if one is configured
+    let client_ip = match addr {
+        std::net::SocketAddr::V4(v4_addr) => v4_addr.ip().to_string(),
+        std::net::SocketAddr::V6(v6_addr) => v6_addr.ip().to_string(),
+    };
+    
+    // If whitelist is configured, check the client IP against it
+    if !args.whitelist.is_empty() {
+        let ip_in_whitelist = is_ip_in_whitelist(&client_ip, &args.whitelist);
+        if !ip_in_whitelist {
+            info!("Client IP {} is not in whitelist, rejecting connection", client_ip);
+            warn!(target: "rtltcp", "Connection from {} refused due to IP not in whitelist", client_ip);
+            return Ok(());
+        }
+    }
+    
     info!("connection from {addr}");
     stream.set_read_timeout(Some(read_timeout))?;
     stream.set_write_timeout(Some(write_timeout))?;
@@ -650,5 +700,65 @@ mod tests {
         limiter.last_command = Instant::now();
         std::thread::sleep(Duration::from_millis(15));
         assert!(limiter.check());
+    }
+
+    // --- IP whitelist tests ---
+
+    #[test]
+    fn test_whitelist_ipv4_single() {
+        let whitelist = vec!["192.168.1.100/32".to_string()];
+        assert!(is_ip_in_whitelist("192.168.1.100", &whitelist));
+        assert!(!is_ip_in_whitelist("192.168.1.101", &whitelist));
+        assert!(!is_ip_in_whitelist("192.168.2.100", &whitelist));
+    }
+
+    #[test]
+    fn test_whitelist_ipv4_cidr() {
+        let whitelist = vec!["192.168.100.0/24".to_string()];
+        assert!(is_ip_in_whitelist("192.168.100.1", &whitelist));
+        assert!(is_ip_in_whitelist("192.168.100.255", &whitelist));
+        assert!(!is_ip_in_whitelist("192.168.101.1", &whitelist));
+        assert!(!is_ip_in_whitelist("10.0.0.1", &whitelist));
+    }
+
+    #[test]
+    fn test_whitelist_ipv4_cidr_16() {
+        let whitelist = vec!["10.0.0.0/16".to_string()];
+        assert!(is_ip_in_whitelist("10.0.0.1", &whitelist));
+        assert!(is_ip_in_whitelist("10.0.255.255", &whitelist));
+        assert!(!is_ip_in_whitelist("10.1.0.1", &whitelist));
+    }
+
+    #[test]
+    fn test_whitelist_multiple_entries() {
+        let whitelist = vec![
+            "192.168.1.0/24".to_string(),
+            "10.0.0.0/8".to_string(),
+        ];
+        assert!(is_ip_in_whitelist("192.168.1.50", &whitelist));
+        assert!(is_ip_in_whitelist("10.50.100.200", &whitelist));
+        assert!(!is_ip_in_whitelist("172.16.0.1", &whitelist));
+    }
+
+    #[test]
+    fn test_whitelist_empty() {
+        let whitelist: Vec<String> = vec![];
+        // Empty whitelist should allow all IPs (not deny all)
+        // The calling code checks whitelist.is_empty() first
+        assert!(!is_ip_in_whitelist("192.168.1.1", &whitelist));
+    }
+
+    #[test]
+    fn test_whitelist_invalid_cidr() {
+        let whitelist = vec!["invalid-cidr".to_string()];
+        // Invalid CIDR should result in IP not being in whitelist
+        assert!(!is_ip_in_whitelist("192.168.1.1", &whitelist));
+    }
+
+    #[test]
+    fn test_whitelist_ipv6() {
+        let whitelist = vec!["::1/128".to_string()];
+        assert!(is_ip_in_whitelist("::1", &whitelist));
+        assert!(!is_ip_in_whitelist("::2", &whitelist));
     }
 }

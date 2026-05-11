@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-05-10
+
+### Added
+- IP whitelist/allowlist feature with `--whitelist` option (CIDR notation)
+- Connection filtering based on IP whitelist for enhanced security
+- Warning logs for rejected connections due to IP not in whitelist
+- Unit tests for whitelist functionality
+
+### Changed
+- Updated documentation to reflect new whitelist feature
+
 ## [0.5.0] - 2026-05-10
 
 ### Added
