@@ -37,6 +37,11 @@ jobs:
           tar czvf "$RELEASE_NAME.tar.gz" -C target/x86_64-unknown-linux-gnu/release rtltcp
           sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
 
+      - name: Debug - list files
+        shell: bash
+        run: |
+          ls -la *.tar.gz *.sha256 2>/dev/null || echo "No matching files found"
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
