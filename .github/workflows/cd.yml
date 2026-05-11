@@ -13,28 +13,55 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
-
-      - name: Install native dependencies
-        shell: bash
+      - name: Install cross-rs
         run: |
-          sudo apt update
-          sudo apt-get install -y librtlsdr-dev libsystemd-dev
+          curl -fsSL https://astral.sh/cross/install | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Cargo build
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+      - name: Cross build for x86_64
+        run: cross build --release --target x86_64-unknown-linux-gnu
 
-      - name: Strip binary and package
+      - name: Strip binary and package (x86_64)
         shell: bash
         run: |
           strip target/x86_64-unknown-linux-gnu/release/rtltcp
           RELEASE_NAME=rtltcp-${GITHUB_REF#refs/tags/}-linux-x86_64
           tar czvf "$RELEASE_NAME.tar.gz" -C target/x86_64-unknown-linux-gnu/release rtltcp
+          sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
+
+      - name: Cross build for aarch64
+        run: cross build --release --target aarch64-unknown-linux-gnu
+
+      - name: Strip binary and package (aarch64)
+        shell: bash
+        run: |
+          strip target/aarch64-unknown-linux-gnu/release/rtltcp
+          RELEASE_NAME=rtltcp-${GITHUB_REF#refs/tags/}-linux-aarch64
+          tar czvf "$RELEASE_NAME.tar.gz" -C target/aarch64-unknown-linux-gnu/release rtltcp
+          sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
+
+      - name: Cross build for i686
+        run: cross build --release --target i686-unknown-linux-gnu
+
+      - name: Strip binary and package (i686)
+        shell: bash
+        run: |
+          strip target/i686-unknown-linux-gnu/release/rtltcp
+          RELEASE_NAME=rtltcp-${GITHUB_REF#refs/tags/}-linux-i686
+          tar czvf "$RELEASE_NAME.tar.gz" -C target/i686-unknown-linux-gnu/release rtltcp
+          sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
+
+      - name: Cross build for armv7
+        run: cross build --release --target armv7-unknown-linux-gnueabihf
+
+      - name: Strip binary and package (armv7)
+        shell: bash
+        run: |
+          strip target/armv7-unknown-linux-gnueabihf/release/rtltcp
+          RELEASE_NAME=rtltcp-${GITHUB_REF#refs/tags/}-linux-armv7
+          tar czvf "$RELEASE_NAME.tar.gz" -C target/armv7-unknown-linux-gnueabihf/release rtltcp
           sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
 
       - name: Debug - list files
