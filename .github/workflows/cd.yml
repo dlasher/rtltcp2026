@@ -15,7 +15,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu,i686-unknown-linux-gnu,armv7-unknown-linux-gnueabihf
+          targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu
 
       - uses: Swatinem/rust-cache@v2
 
@@ -50,28 +50,6 @@ jobs:
           strip target/aarch64-unknown-linux-gnu/release/rtltcp
           RELEASE_NAME=rtltcp-${GITHUB_REF#refs/tags/}-linux-aarch64
           tar czvf "$RELEASE_NAME.tar.gz" -C target/aarch64-unknown-linux-gnu/release rtltcp
-          sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
-
-      - name: Cross build for i686
-        run: cross build --release --target i686-unknown-linux-gnu
-
-      - name: Strip binary and package (i686)
-        shell: bash
-        run: |
-          strip target/i686-unknown-linux-gnu/release/rtltcp
-          RELEASE_NAME=rtltcp-${GITHUB_REF#refs/tags/}-linux-i686
-          tar czvf "$RELEASE_NAME.tar.gz" -C target/i686-unknown-linux-gnu/release rtltcp
-          sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
-
-      - name: Cross build for armv7
-        run: cross build --release --target armv7-unknown-linux-gnueabihf
-
-      - name: Strip binary and package (armv7)
-        shell: bash
-        run: |
-          strip target/armv7-unknown-linux-gnueabihf/release/rtltcp
-          RELEASE_NAME=rtltcp-${GITHUB_REF#refs/tags/}-linux-armv7
-          tar czvf "$RELEASE_NAME.tar.gz" -C target/armv7-unknown-linux-gnueabihf/release rtltcp
           sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
 
       - name: Debug - list files
