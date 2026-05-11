@@ -40,13 +40,15 @@ Download the [latest release](https://github.com/FirebirdRender/rtltcp/releases)
 
 ```bash
 # x86_64 Linux
-wget https://github.com/FirebirdRender/rtltcp/releases/download/0.4.0/rtltcp-linux-x86_64.tar.gz
+wget https://github.com/FirebirdRender/rtltcp/releases/download/v0.6.1/rtltcp-linux-x86_64.tar.gz
 tar xzf rtltcp-linux-x86_64.tar.gz
 sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
 
 # ARM64 (aarch64)
-wget https://github.com/FirebirdRender/rtltcp/releases/download/0.4.0/rtltcp-linux-arm64.tar.gz
+# Note: ARM64 binary built on native device due to cross-compilation challenges
+# See PROJECT/evaluation-report.md for details
+wget https://github.com/FirebirdRender/rtltcp/releases/download/v0.6.1/rtltcp-linux-arm64.tar.gz
 tar xzf rtltcp-linux-arm64.tar.gz
 sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
@@ -71,7 +73,7 @@ sudo cp target/release/rtltcp /usr/local/bin/
 ### Command Line Options
 
 ```
-rtltcp 0.4.0
+rtltcp 0.6.1
 an I/Q spectrum server for RTL2832 based DVB-T receivers
 
 USAGE:
@@ -327,7 +329,7 @@ On connect, the server sends a 12-byte magic packet:
 
 ## Migration Guide
 
-### From v0.3.x to v0.4.0
+### From v0.3.x to v0.4.0 (and later)
 
 1. **Custom error type**: `RtlTcpError` now replaces `Box<dyn std::error::Error>`. This is transparent for CLI users but affects library consumers.
 2. **Enhanced shutdown**: Signal handling is now more responsive with proper stream shutdown.
