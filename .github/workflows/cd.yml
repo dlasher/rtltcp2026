@@ -43,11 +43,10 @@ jobs:
           ls -la *.tar.gz *.sha256 2>/dev/null || echo "No matching files found"
 
       - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            rtltcp-*.tar.gz
-            rtltcp-*.sha256
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF" --title "$GITHUB_REF" --notes "Release $(date)" --draft=false
+          gh release upload "$GITHUB_REF" rtltcp-*.tar.gz rtltcp-*.sha256 --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
