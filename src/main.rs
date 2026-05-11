@@ -1,19 +1,19 @@
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::io::ErrorKind;
-use std::net::{IpAddr, TcpListener, Shutdown};
+use std::net::{IpAddr, Shutdown, TcpListener};
+use std::ops::RangeInclusive;
 use std::result::Result as StdResult;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::ops::RangeInclusive;
 
 use clap::Parser;
+use ipnet::IpNet;
 #[cfg(feature = "systemd")]
 use listenfd::ListenFd;
 use tracing::{debug, info, warn};
-use ipnet::IpNet;
 
 mod error;
 use crate::error::RtlTcpError;
@@ -72,7 +72,9 @@ where
 /// Validate a frequency value, returning an error message if out of bounds.
 fn validate_frequency(freq: u32) -> Result<(), String> {
     if !FREQ_RANGE.contains(&freq) {
-        Err(format!("frequency {freq} Hz out of range ({FREQ_MIN}-{FREQ_MAX})"))
+        Err(format!(
+            "frequency {freq} Hz out of range ({FREQ_MIN}-{FREQ_MAX})"
+        ))
     } else {
         Ok(())
     }
@@ -215,16 +217,24 @@ fn main() -> StdResult<(), RtlTcpError> {
 
     // Validate buffers and tcp_buffers manually
     if args.buffers == 0 || args.buffers > 32 {
-        return Err(RtlTcpError::Config("buffers must be between 1 and 32".to_string()));
+        return Err(RtlTcpError::Config(
+            "buffers must be between 1 and 32".to_string(),
+        ));
     }
     if args.tcp_buffers == 0 || args.tcp_buffers > 10_485_760 {
-        return Err(RtlTcpError::Config("tcp_buffers must be between 1 and 10485760 (10MB)".to_string()));
+        return Err(RtlTcpError::Config(
+            "tcp_buffers must be between 1 and 10485760 (10MB)".to_string(),
+        ));
     }
     if args.read_timeout == 0 {
-        return Err(RtlTcpError::Config("read_timeout must be greater than 0".to_string()));
+        return Err(RtlTcpError::Config(
+            "read_timeout must be greater than 0".to_string(),
+        ));
     }
     if args.write_timeout == 0 {
-        return Err(RtlTcpError::Config("write_timeout must be greater than 0".to_string()));
+        return Err(RtlTcpError::Config(
+            "write_timeout must be greater than 0".to_string(),
+        ));
     }
 
     // Warn when binding to all interfaces
@@ -243,10 +253,11 @@ fn main() -> StdResult<(), RtlTcpError> {
     #[cfg(feature = "systemd")]
     {
         let mut listenfd = ListenFd::from_env();
-        listener = if let Some(listener) = listenfd
-            .take_tcp_listener(0)
-            .map_err(|e| RtlTcpError::Config(format!("could not get file descriptor from environment: {e}")))?
-        {
+        listener = if let Some(listener) = listenfd.take_tcp_listener(0).map_err(|e| {
+            RtlTcpError::Config(format!(
+                "could not get file descriptor from environment: {e}"
+            ))
+        })? {
             listener
         } else {
             TcpListener::bind(format!("{}:{}", args.address, args.port))?
@@ -266,25 +277,28 @@ fn main() -> StdResult<(), RtlTcpError> {
     let read_timeout = Duration::from_secs(args.read_timeout);
     let write_timeout = Duration::from_secs(args.write_timeout);
 
-info!("waiting for connection…");
+    info!("waiting for connection…");
     let (stream, addr) = listener.accept()?;
-    
+
     // Check if the client IP is in the whitelist if one is configured
     let client_ip = match addr {
         std::net::SocketAddr::V4(v4_addr) => v4_addr.ip().to_string(),
         std::net::SocketAddr::V6(v6_addr) => v6_addr.ip().to_string(),
     };
-    
+
     // If whitelist is configured, check the client IP against it
     if !args.whitelist.is_empty() {
         let ip_in_whitelist = is_ip_in_whitelist(&client_ip, &args.whitelist);
         if !ip_in_whitelist {
-            info!("Client IP {} is not in whitelist, rejecting connection", client_ip);
+            info!(
+                "Client IP {} is not in whitelist, rejecting connection",
+                client_ip
+            );
             warn!(target: "rtltcp", "Connection from {} refused due to IP not in whitelist", client_ip);
             return Ok(());
         }
     }
-    
+
     info!("connection from {addr}");
     stream.set_read_timeout(Some(read_timeout))?;
     stream.set_write_timeout(Some(write_timeout))?;
@@ -295,8 +309,8 @@ info!("waiting for connection…");
     let stream_for_shutdown = Arc::new(Mutex::new(Some(stream.try_clone()?)));
     let stream_for_shutdown_ctrlc = stream_for_shutdown.clone();
 
-    let (ctl, mut reader) =
-        rtlsdr_mt::open(args.device_index).map_err(|e| RtlTcpError::Device(format!("could not open RTL-SDR device: {e:?}")))?;
+    let (ctl, mut reader) = rtlsdr_mt::open(args.device_index)
+        .map_err(|e| RtlTcpError::Device(format!("could not open RTL-SDR device: {e:?}")))?;
     let ctl = Arc::new(Mutex::new(ctl));
 
     ctrlc::set_handler(move || {
@@ -316,7 +330,8 @@ info!("waiting for connection…");
                 let _ = stream.shutdown(Shutdown::Both);
             }
         }
-    }).map_err(|e| RtlTcpError::Config(format!("could not set signal handler: {e}")))?;
+    })
+    .map_err(|e| RtlTcpError::Config(format!("could not set signal handler: {e}")))?;
 
     // Task 2.3: Track unknown commands for better visibility
     let unknown_command_count = Arc::new(Mutex::new(0u64));
@@ -332,12 +347,13 @@ info!("waiting for connection…");
             loop {
                 match stream.read_exact(&mut buf) {
                     Ok(()) => {}
-                    Err(e) if e.kind() == ErrorKind::UnexpectedEof
-                        || e.kind() == ErrorKind::ConnectionReset
-                        || e.kind() == ErrorKind::BrokenPipe
-                        || e.kind() == ErrorKind::TimedOut
-                        || e.kind() == ErrorKind::ConnectionAborted
-                        || e.kind() == ErrorKind::NotConnected =>
+                    Err(e)
+                        if e.kind() == ErrorKind::UnexpectedEof
+                            || e.kind() == ErrorKind::ConnectionReset
+                            || e.kind() == ErrorKind::BrokenPipe
+                            || e.kind() == ErrorKind::TimedOut
+                            || e.kind() == ErrorKind::ConnectionAborted
+                            || e.kind() == ErrorKind::NotConnected =>
                     {
                         info!("client disconnected: {e}");
                         break;
@@ -736,10 +752,7 @@ mod tests {
 
     #[test]
     fn test_whitelist_multiple_entries() {
-        let whitelist = vec![
-            "192.168.1.0/24".to_string(),
-            "10.0.0.0/8".to_string(),
-        ];
+        let whitelist = vec!["192.168.1.0/24".to_string(), "10.0.0.0/8".to_string()];
         assert!(is_ip_in_whitelist("192.168.1.50", &whitelist));
         assert!(is_ip_in_whitelist("10.50.100.200", &whitelist));
         assert!(!is_ip_in_whitelist("172.16.0.1", &whitelist));

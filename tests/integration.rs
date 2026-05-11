@@ -5,9 +5,9 @@
 
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
+use std::ops::RangeInclusive;
 use std::process::Command;
 use std::thread;
-use std::ops::RangeInclusive;
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -57,20 +57,29 @@ fn help_shows_all_options() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
+
     // Verify all CLI flags are shown
     let required_options = vec![
-        "-a", "--address",
-        "-p", "--port",
-        "-d", "--device-index",
-        "-b", "--buffers",
-        "-s", "--tcp-buffers",
+        "-a",
+        "--address",
+        "-p",
+        "--port",
+        "-d",
+        "--device-index",
+        "-b",
+        "--buffers",
+        "-s",
+        "--tcp-buffers",
         "--read-timeout",
         "--write-timeout",
     ];
-    
+
     for option in required_options {
-        assert!(stdout.contains(option), "Missing option in help: {}", option);
+        assert!(
+            stdout.contains(option),
+            "Missing option in help: {}",
+            option
+        );
     }
 }
 
@@ -120,7 +129,9 @@ const TUNER_GAIN_RANGE: RangeInclusive<i32> = TUNER_GAIN_MIN..=TUNER_GAIN_MAX;
 
 fn validate_frequency(freq: u32) -> Result<(), String> {
     if !FREQ_RANGE.contains(&freq) {
-        Err(format!("frequency {freq} Hz out of range ({FREQ_MIN}-{FREQ_MAX})"))
+        Err(format!(
+            "frequency {freq} Hz out of range ({FREQ_MIN}-{FREQ_MAX})"
+        ))
     } else {
         Ok(())
     }
@@ -313,10 +324,10 @@ fn test_unknown_command_reserved() {
 fn test_validate_frequency_valid() {
     assert!(validate_frequency(0).is_ok());
     assert!(validate_frequency(1).is_ok());
-    assert!(validate_frequency(100_000_000).is_ok());  // 100 MHz (FM band)
-    assert!(validate_frequency(433_920_000).is_ok());  // 433.92 MHz (ISM)
-    assert!(validate_frequency(868_000_000).is_ok());  // 868 MHz (ISM)
-    assert!(validate_frequency(915_000_000).is_ok());  // 915 MHz (ISM)
+    assert!(validate_frequency(100_000_000).is_ok()); // 100 MHz (FM band)
+    assert!(validate_frequency(433_920_000).is_ok()); // 433.92 MHz (ISM)
+    assert!(validate_frequency(868_000_000).is_ok()); // 868 MHz (ISM)
+    assert!(validate_frequency(915_000_000).is_ok()); // 915 MHz (ISM)
     assert!(validate_frequency(1_000_000_000).is_ok()); // 1 GHz
     assert!(validate_frequency(2_200_000_000).is_ok()); // Max
 }
@@ -359,7 +370,7 @@ fn test_validate_frequency_error_messages() {
 fn test_validate_sample_rate_valid() {
     assert!(validate_sample_rate(0).is_ok());
     assert!(validate_sample_rate(1).is_ok());
-    assert!(validate_sample_rate(250_000).is_ok());   // 250 kS/s
+    assert!(validate_sample_rate(250_000).is_ok()); // 250 kS/s
     assert!(validate_sample_rate(1_000_000).is_ok()); // 1 MS/s
     assert!(validate_sample_rate(2_048_000).is_ok()); // 2.048 MS/s (common)
     assert!(validate_sample_rate(2_400_000).is_ok()); // 2.4 MS/s
@@ -404,8 +415,8 @@ fn test_validate_ppm_valid() {
     assert!(validate_ppm(-50).is_ok());
     assert!(validate_ppm(100).is_ok());
     assert!(validate_ppm(-100).is_ok());
-    assert!(validate_ppm(PPM_MIN).is_ok());  // -200
-    assert!(validate_ppm(PPM_MAX).is_ok());  // 200
+    assert!(validate_ppm(PPM_MIN).is_ok()); // -200
+    assert!(validate_ppm(PPM_MAX).is_ok()); // 200
 }
 
 /// Test invalid PPM values
@@ -446,9 +457,9 @@ fn test_validate_ppm_error_messages() {
 fn test_validate_tuner_gain_valid() {
     assert!(validate_tuner_gain(0).is_ok());
     assert!(validate_tuner_gain(1).is_ok());
-    assert!(validate_tuner_gain(30).is_ok());     // 3.0 dB
-    assert!(validate_tuner_gain(100).is_ok());    // 10.0 dB
-    assert!(validate_tuner_gain(300).is_ok());    // 30.0 dB
+    assert!(validate_tuner_gain(30).is_ok()); // 3.0 dB
+    assert!(validate_tuner_gain(100).is_ok()); // 10.0 dB
+    assert!(validate_tuner_gain(300).is_ok()); // 30.0 dB
     assert!(validate_tuner_gain(TUNER_GAIN_MIN).is_ok()); // 0
     assert!(validate_tuner_gain(TUNER_GAIN_MAX).is_ok()); // 500 (50.0 dB)
 }
@@ -574,7 +585,7 @@ fn test_rate_limiter_exact_interval() {
 #[test]
 fn test_rate_limiter_repeated() {
     let mut limiter = RateLimiter::new(Duration::from_millis(5));
-    
+
     for _ in 0..10 {
         assert!(limiter.check());
         thread::sleep(Duration::from_millis(10));
@@ -591,7 +602,7 @@ fn test_frequency_encoding() {
     let freq: u32 = 100_500_000; // 100.5 MHz
     let bytes = freq.to_be_bytes();
     let buf = [CMD_SET_FREQUENCY, bytes[0], bytes[1], bytes[2], bytes[3]];
-    
+
     let decoded_freq = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
     assert_eq!(decoded_freq, freq);
 }
@@ -602,7 +613,7 @@ fn test_sample_rate_encoding() {
     let rate: u32 = 2_048_000; // 2.048 MS/s
     let bytes = rate.to_be_bytes();
     let buf = [CMD_SET_SAMPLE_RATE, bytes[0], bytes[1], bytes[2], bytes[3]];
-    
+
     let decoded_rate = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
     assert_eq!(decoded_rate, rate);
 }
@@ -613,7 +624,7 @@ fn test_ppm_encoding() {
     let ppm: i32 = -50;
     let bytes = ppm.to_be_bytes();
     let buf = [CMD_SET_PPM, bytes[0], bytes[1], bytes[2], bytes[3]];
-    
+
     let decoded_ppm = i32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
     assert_eq!(decoded_ppm, ppm);
 }
@@ -624,7 +635,7 @@ fn test_tuner_gain_encoding() {
     let gain: i32 = 30;
     let bytes = gain.to_be_bytes();
     let buf = [CMD_SET_TUNER_GAIN, bytes[0], bytes[1], bytes[2], bytes[3]];
-    
+
     let decoded_gain = i32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
     assert_eq!(decoded_gain, gain);
 }
@@ -638,7 +649,7 @@ fn test_agc_encoding() {
     let buf1 = [CMD_SET_AGC, bytes[0], bytes[1], bytes[2], bytes[3]];
     let decoded1 = u32::from_be_bytes([buf1[1], buf1[2], buf1[3], buf1[4]]);
     assert_eq!(decoded1, 1);
-    
+
     // AGC off
     let agc_off: u32 = 0;
     let bytes = agc_off.to_be_bytes();
@@ -656,7 +667,7 @@ fn test_gain_mode_encoding() {
     let buf1 = [CMD_SET_GAIN_MODE, bytes[0], bytes[1], bytes[2], bytes[3]];
     let decoded1 = i32::from_be_bytes([buf1[1], buf1[2], buf1[3], buf1[4]]);
     assert_eq!(decoded1, 1);
-    
+
     // Auto mode (gain_mode = 0)
     let auto_mode: i32 = 0;
     let bytes = auto_mode.to_be_bytes();
@@ -673,8 +684,7 @@ fn test_gain_mode_encoding() {
 #[test]
 fn test_tcp_listener_bind() {
     // Find a free port
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .expect("failed to bind to port");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind to port");
     let port = listener.local_addr().unwrap().port();
     assert!(port > 0);
 }
@@ -682,24 +692,21 @@ fn test_tcp_listener_bind() {
 /// Test TCP connection handling
 #[test]
 fn test_tcp_connection() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .expect("failed to bind to port");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind to port");
     let addr = listener.local_addr().unwrap();
-    
+
     // Spawn server thread
     let server = thread::spawn(move || {
         let (stream, _) = listener.accept().expect("failed to accept");
         stream
     });
-    
+
     // Connect from client thread
-    let client = thread::spawn(move || {
-        TcpStream::connect(addr).expect("failed to connect")
-    });
-    
+    let client = thread::spawn(move || TcpStream::connect(addr).expect("failed to connect"));
+
     let client_stream = client.join().expect("client thread panicked");
     let server_stream = server.join().expect("server thread panicked");
-    
+
     // Both streams should be established
     assert!(client_stream.local_addr().is_ok());
     assert!(server_stream.local_addr().is_ok());
@@ -708,24 +715,22 @@ fn test_tcp_connection() {
 /// Test TCP timeout behavior
 #[test]
 fn test_tcp_timeout() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .expect("failed to bind to port");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind to port");
     let addr = listener.local_addr().unwrap();
-    
+
     let server = thread::spawn(move || {
         let (stream, _) = listener.accept().expect("failed to accept");
-        stream.set_read_timeout(Some(Duration::from_millis(100)))
+        stream
+            .set_read_timeout(Some(Duration::from_millis(100)))
             .expect("failed to set read timeout");
         stream
     });
-    
-    let client = thread::spawn(move || {
-        TcpStream::connect(addr).expect("failed to connect")
-    });
-    
+
+    let client = thread::spawn(move || TcpStream::connect(addr).expect("failed to connect"));
+
     let mut stream = server.join().expect("server thread panicked");
     let _client = client.join().expect("client thread panicked");
-    
+
     // Try to read with timeout
     let mut buf = [0u8; 5];
     let result = stream.read_exact(&mut buf);
@@ -744,17 +749,17 @@ fn test_all_commands_valid_inputs() {
     let freq_buf: [u8; 5] = [CMD_SET_FREQUENCY, 0x05, 0xFD, 0x82, 0x20];
     let freq = u32::from_be_bytes([freq_buf[1], freq_buf[2], freq_buf[3], freq_buf[4]]);
     assert!(validate_frequency(freq).is_ok());
-    
+
     // Standard sample rate (2.048 MS/s)
     let sr_buf: [u8; 5] = [CMD_SET_SAMPLE_RATE, 0x00, 0x1F, 0x40, 0x00];
     let sr = u32::from_be_bytes([sr_buf[1], sr_buf[2], sr_buf[3], sr_buf[4]]);
     assert!(validate_sample_rate(sr).is_ok());
-    
+
     // Standard gain (30 = 3.0 dB)
     let gain_buf: [u8; 5] = [CMD_SET_TUNER_GAIN, 0x00, 0x00, 0x00, 0x1E];
     let gain = i32::from_be_bytes([gain_buf[1], gain_buf[2], gain_buf[3], gain_buf[4]]);
     assert!(validate_tuner_gain(gain).is_ok());
-    
+
     // Standard PPM (50)
     let ppm_buf: [u8; 5] = [CMD_SET_PPM, 0x00, 0x00, 0x00, 0x32];
     let ppm = i32::from_be_bytes([ppm_buf[1], ppm_buf[2], ppm_buf[3], ppm_buf[4]]);
@@ -766,29 +771,49 @@ fn test_all_commands_valid_inputs() {
 fn test_all_commands_invalid_inputs() {
     // Max frequency + 1
     let freq_over: u32 = FREQ_MAX + 1;
-    let freq_buf = [CMD_SET_FREQUENCY, freq_over.to_be_bytes()[0], freq_over.to_be_bytes()[1],
-                    freq_over.to_be_bytes()[2], freq_over.to_be_bytes()[3]];
+    let freq_buf = [
+        CMD_SET_FREQUENCY,
+        freq_over.to_be_bytes()[0],
+        freq_over.to_be_bytes()[1],
+        freq_over.to_be_bytes()[2],
+        freq_over.to_be_bytes()[3],
+    ];
     let freq = u32::from_be_bytes([freq_buf[1], freq_buf[2], freq_buf[3], freq_buf[4]]);
     assert!(validate_frequency(freq).is_err());
-    
+
     // Max sample rate + 1
     let sr_over: u32 = SAMPLE_RATE_MAX + 1;
-    let sr_buf = [CMD_SET_SAMPLE_RATE, sr_over.to_be_bytes()[0], sr_over.to_be_bytes()[1],
-                  sr_over.to_be_bytes()[2], sr_over.to_be_bytes()[3]];
+    let sr_buf = [
+        CMD_SET_SAMPLE_RATE,
+        sr_over.to_be_bytes()[0],
+        sr_over.to_be_bytes()[1],
+        sr_over.to_be_bytes()[2],
+        sr_over.to_be_bytes()[3],
+    ];
     let sr = u32::from_be_bytes([sr_buf[1], sr_buf[2], sr_buf[3], sr_buf[4]]);
     assert!(validate_sample_rate(sr).is_err());
-    
+
     // Max PPM + 1
     let ppm_over: i32 = PPM_MAX + 1;
-    let ppm_buf = [CMD_SET_PPM, ppm_over.to_be_bytes()[0], ppm_over.to_be_bytes()[1],
-                   ppm_over.to_be_bytes()[2], ppm_over.to_be_bytes()[3]];
+    let ppm_buf = [
+        CMD_SET_PPM,
+        ppm_over.to_be_bytes()[0],
+        ppm_over.to_be_bytes()[1],
+        ppm_over.to_be_bytes()[2],
+        ppm_over.to_be_bytes()[3],
+    ];
     let ppm = i32::from_be_bytes([ppm_buf[1], ppm_buf[2], ppm_buf[3], ppm_buf[4]]);
     assert!(validate_ppm(ppm).is_err());
-    
+
     // Max tuner gain + 1
     let gain_over: i32 = TUNER_GAIN_MAX + 1;
-    let gain_buf = [CMD_SET_TUNER_GAIN, gain_over.to_be_bytes()[0], gain_over.to_be_bytes()[1],
-                    gain_over.to_be_bytes()[2], gain_over.to_be_bytes()[3]];
+    let gain_buf = [
+        CMD_SET_TUNER_GAIN,
+        gain_over.to_be_bytes()[0],
+        gain_over.to_be_bytes()[1],
+        gain_over.to_be_bytes()[2],
+        gain_over.to_be_bytes()[3],
+    ];
     let gain = i32::from_be_bytes([gain_buf[1], gain_buf[2], gain_buf[3], gain_buf[4]]);
     assert!(validate_tuner_gain(gain).is_err());
 }
@@ -800,15 +825,15 @@ fn test_zero_payload_commands() {
     let _zero_buf: [u8; 5] = [CMD_SET_FREQUENCY, 0, 0, 0, 0];
     let freq = u32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_frequency(freq).is_ok());
-    
+
     let _zero_buf: [u8; 5] = [CMD_SET_SAMPLE_RATE, 0, 0, 0, 0];
     let sr = u32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_sample_rate(sr).is_ok());
-    
+
     let _zero_buf: [u8; 5] = [CMD_SET_PPM, 0, 0, 0, 0];
     let ppm = i32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_ppm(ppm).is_ok());
-    
+
     let _zero_buf: [u8; 5] = [CMD_SET_TUNER_GAIN, 0, 0, 0, 0];
     let gain = i32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_tuner_gain(gain).is_ok());
@@ -841,24 +866,39 @@ fn test_negative_ppm() {
 fn test_gain_mode_payload_values() {
     // Positive values should be manual mode
     let positive: i32 = 1;
-    let buf1 = [CMD_SET_GAIN_MODE, positive.to_be_bytes()[0], positive.to_be_bytes()[1],
-                positive.to_be_bytes()[2], positive.to_be_bytes()[3]];
+    let buf1 = [
+        CMD_SET_GAIN_MODE,
+        positive.to_be_bytes()[0],
+        positive.to_be_bytes()[1],
+        positive.to_be_bytes()[2],
+        positive.to_be_bytes()[3],
+    ];
     let mode1 = i32::from_be_bytes([buf1[1], buf1[2], buf1[3], buf1[4]]);
-    assert!(mode1 > 0);  // Manual mode
-    
+    assert!(mode1 > 0); // Manual mode
+
     // Zero should be auto mode
     let zero: i32 = 0;
-    let buf2 = [CMD_SET_GAIN_MODE, zero.to_be_bytes()[0], zero.to_be_bytes()[1],
-                zero.to_be_bytes()[2], zero.to_be_bytes()[3]];
+    let buf2 = [
+        CMD_SET_GAIN_MODE,
+        zero.to_be_bytes()[0],
+        zero.to_be_bytes()[1],
+        zero.to_be_bytes()[2],
+        zero.to_be_bytes()[3],
+    ];
     let mode2 = i32::from_be_bytes([buf2[1], buf2[2], buf2[3], buf2[4]]);
-    assert_eq!(mode2, 0);  // Auto mode
-    
+    assert_eq!(mode2, 0); // Auto mode
+
     // Large positive should be manual mode
     let large: i32 = 1000;
-    let buf3 = [CMD_SET_GAIN_MODE, large.to_be_bytes()[0], large.to_be_bytes()[1],
-                large.to_be_bytes()[2], large.to_be_bytes()[3]];
+    let buf3 = [
+        CMD_SET_GAIN_MODE,
+        large.to_be_bytes()[0],
+        large.to_be_bytes()[1],
+        large.to_be_bytes()[2],
+        large.to_be_bytes()[3],
+    ];
     let mode3 = i32::from_be_bytes([buf3[1], buf3[2], buf3[3], buf3[4]]);
-    assert!(mode3 > 0);  // Manual mode
+    assert!(mode3 > 0); // Manual mode
 }
 
 // ============================================================================
@@ -871,7 +911,7 @@ fn test_rate_limiter_performance() {
     let mut limiter = RateLimiter::new(Duration::from_millis(50));
     let mut allowed = 0u32;
     let mut denied = 0u32;
-    
+
     let start = Instant::now();
     for _ in 0..1000 {
         if limiter.check() {
@@ -881,7 +921,7 @@ fn test_rate_limiter_performance() {
         }
     }
     let elapsed = start.elapsed();
-    
+
     // Should have allowed some and denied most
     assert!(allowed < denied);
     // Should complete in reasonable time (< 100ms)
@@ -893,14 +933,14 @@ fn test_rate_limiter_performance() {
 fn test_validation_performance() {
     let iterations = 10_000;
     let start = Instant::now();
-    
+
     for i in 0..iterations {
         let _ = validate_frequency(i as u32 % FREQ_MAX);
         let _ = validate_sample_rate(i as u32 % SAMPLE_RATE_MAX);
         let _ = validate_ppm((i % 400) - 200);
         let _ = validate_tuner_gain((i % 600) - 50);
     }
-    
+
     let elapsed = start.elapsed();
     // Should complete 40k validations in under 100ms
     assert!(elapsed < Duration::from_millis(100));
@@ -911,25 +951,22 @@ fn test_validation_performance() {
 fn test_tcp_connection_performance() {
     let iterations = 10;
     let start = Instant::now();
-    
+
     for _ in 0..iterations {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .expect("failed to bind");
+        let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind");
         let addr = listener.local_addr().unwrap();
-        
+
         let server = thread::spawn(move || {
             let (stream, _) = listener.accept().expect("failed to accept");
             stream
         });
-        
-        let client = thread::spawn(move || {
-            TcpStream::connect(addr).expect("failed to connect")
-        });
-        
+
+        let client = thread::spawn(move || TcpStream::connect(addr).expect("failed to connect"));
+
         let _ = server.join().unwrap();
         let _ = client.join().unwrap();
     }
-    
+
     let elapsed = start.elapsed();
     // Should complete 10 connection cycles in under 2 seconds
     assert!(elapsed < Duration::from_secs(2));
