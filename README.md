@@ -13,7 +13,7 @@ A production-ready Rust implementation of [rtl-tcp](https://github.com/pinkavaj/
 - **Graceful shutdown** - Proper cleanup of device resources and threads
 - **Security hardening** - Client logging, DoS protection, input validation
 - **Systemd socket activation** - Start on demand, keep USB dongle cool when idle
-- **Production tested** - Runs reliably on ARM devices (Odroid, Raspberry Pi)
+- **Production tested** - Runs reliably on Linux (x86_64, ARM via local build)
 - **Rate limiting** - Prevents command flooding attacks
 - **Input validation** - Protects against out-of-range values reaching hardware
 
@@ -39,9 +39,9 @@ A production-ready Rust implementation of [rtl-tcp](https://github.com/pinkavaj/
 Download the [latest release](https://github.com/FirebirdRender/rtltcp/releases) for your platform:
 
 ```bash
-# x86_64 Linux (native CI/CD build)
-wget https://github.com/FirebirdRender/rtltcp/releases/download/v0.6.1/rtltcp-linux-x86_64.tar.gz
-tar xzf rtltcp-linux-x86_64.tar.gz
+# x86_64 Linux
+wget https://github.com/FirebirdRender/rtltcp/releases/download/v0.6.17/rtltcp-v0.6.17-linux-x86_64.tar.gz
+tar xzf rtltcp-v0.6.17-linux-x86_64.tar.gz
 sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
 ```
@@ -60,21 +60,29 @@ cargo build --release
 sudo cp target/release/rtltcp /usr/local/bin/
 ```
 
-### Building ARM64 binaries on native ARM64 device
+### Building for ARM (aarch64)
 
-**Note:** As of v0.6.1, CI/CD only builds x86_64 binaries. To build for ARM64 (aarch64) on a native device like Odroid or Raspberry Pi:
+Pre-built binaries are only available for x86_64 Linux. To build on ARM hardware (Odroid, Raspberry Pi, etc.):
 
 ```bash
-# On the ARM64 device, install dependencies
+# Install dependencies
 sudo apt update
-sudo apt-get install -y librtlsdr-dev libsystemd-dev
+sudo apt install -y librtlsdr-dev libsystemd-dev build-essential pkg-config
 
-# Build
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Clone and build
+git clone https://github.com/FirebirdRender/rtltcp.git
+cd rtltcp
 cargo build --release
 
 # Install
 sudo cp target/release/rtltcp /usr/local/bin/
 ```
+
+No cross-compilation toolchain needed — builds natively on the target device.
 
 ## Usage
 

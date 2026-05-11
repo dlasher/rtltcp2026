@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced duplicated mutex handling with `with_control` helper function
 - Enhanced error logging to include actual error messages instead of discarding them
 - Improved error context on device and system calls with proper error chaining
-- Fixed cross-compilation workflow to properly build all target platforms
+- Simplified CD workflow to x86_64 native builds only
 - Added MSRV verification job to CI pipeline
 - Enhanced streaming failure logging with error details
 
