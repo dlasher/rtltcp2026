@@ -24,3 +24,4 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fail_on_advisories: true
+          fail_on_advisories: true

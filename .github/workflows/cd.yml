@@ -62,6 +62,14 @@ jobs:
         if: ${{ matrix.job.use-cross }}
         uses: taiki-e/install-action@cross
 
+      - name: Install cross dependencies
+        if: ${{ matrix.job.use-cross }}
+        shell: bash
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo apt update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu librtlsdr-dev:arm64 libsystemd-dev:arm64
+
       - name: Cargo build (native)
         if: ${{ !matrix.job.use-cross }}
         run: cargo build --release --target ${{ matrix.job.target }}
