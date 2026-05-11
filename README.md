@@ -39,17 +39,9 @@ A production-ready Rust implementation of [rtl-tcp](https://github.com/pinkavaj/
 Download the [latest release](https://github.com/FirebirdRender/rtltcp/releases) for your platform:
 
 ```bash
-# x86_64 Linux
+# x86_64 Linux (native CI/CD build)
 wget https://github.com/FirebirdRender/rtltcp/releases/download/v0.6.1/rtltcp-linux-x86_64.tar.gz
 tar xzf rtltcp-linux-x86_64.tar.gz
-sudo mv rtltcp /usr/local/bin/
-chmod +x /usr/local/bin/rtltcp
-
-# ARM64 (aarch64)
-# Note: ARM64 binary built on native device due to cross-compilation challenges
-# See PROJECT/evaluation-report.md for details
-wget https://github.com/FirebirdRender/rtltcp/releases/download/v0.6.1/rtltcp-linux-arm64.tar.gz
-tar xzf rtltcp-linux-arm64.tar.gz
 sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
 ```
@@ -65,6 +57,22 @@ Requirements:
 git clone https://github.com/FirebirdRender/rtltcp.git
 cd rtltcp
 cargo build --release
+sudo cp target/release/rtltcp /usr/local/bin/
+```
+
+### Building ARM64 binaries on native ARM64 device
+
+**Note:** As of v0.6.1, CI/CD only builds x86_64 binaries. To build for ARM64 (aarch64) on a native device like Odroid or Raspberry Pi:
+
+```bash
+# On the ARM64 device, install dependencies
+sudo apt update
+sudo apt-get install -y librtlsdr-dev libsystemd-dev
+
+# Build
+cargo build --release
+
+# Install
 sudo cp target/release/rtltcp /usr/local/bin/
 ```
 

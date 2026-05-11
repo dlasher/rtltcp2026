@@ -32,7 +32,7 @@ jobs:
 
       - name: Install cross-rs for cross-compilation
         run: |
-          curl -fsSL https://astral.sh/cross/install | sh
+          cargo install cross --git https://github.com/cross-rs/cross
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Cross build for aarch64
