@@ -89,7 +89,7 @@ No cross-compilation toolchain needed — builds natively on the target device.
 ### Command Line Options
 
 ```
-rtltcp 0.6.1
+rtltcp 0.7.2
 an I/Q spectrum server for RTL2832 based DVB-T receivers
 
 USAGE:
