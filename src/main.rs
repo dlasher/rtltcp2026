@@ -4,7 +4,7 @@ use std::io::ErrorKind;
 use std::net::{IpAddr, Shutdown, TcpListener};
 use std::ops::RangeInclusive;
 use std::result::Result as StdResult;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -502,9 +502,14 @@ fn main() -> StdResult<(), RtlTcpError> {
     let mut buf_write_stream = BufWriter::with_capacity(args.tcp_buffers, stream);
     buf_write_stream.write_all(MAGIC_PACKET)?;
 
+    let total_bytes_sent = Arc::new(AtomicU64::new(0));
     let read_result = reader.read_async(args.buffers, 0, |bytes| {
+        total_bytes_sent.fetch_add(bytes.len() as u64, Ordering::Relaxed);
         if let Err(e) = buf_write_stream.write_all(bytes) {
-            warn!("stream write failed, triggering shutdown: {e}");
+            warn!(
+                "stream write failed after {} bytes, triggering shutdown: {e}",
+                total_bytes_sent.load(Ordering::Relaxed)
+            );
             let _ = sender.try_send(());
         }
     });
@@ -512,8 +517,11 @@ fn main() -> StdResult<(), RtlTcpError> {
     // Signal cancel thread so it doesn't hang on recv() if read_async completes normally
     let _ = sender.try_send(());
 
+    let final_bytes = total_bytes_sent.load(Ordering::Relaxed);
+    info!("read_async completed after sending {final_bytes} bytes");
+
     if let Err(e) = read_result {
-        warn!("read_async error: {e:?}");
+        warn!("read_async error after {final_bytes} bytes: {e:?}");
     }
 
     // Flush buffer before shutting down
