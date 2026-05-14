@@ -1,14 +1,34 @@
-# rtltcp
+# rtltcp-2026
 
-[![CI](https://github.com/FirebirdRender/rtltcp/workflows/CI/badge.svg)](https://github.com/FirebirdRender/rtltcp/actions)
-[![Coverage Status](https://coveralls.io/repos/github/FirebirdRender/rtltcp/badge.svg?branch=main)](https://coveralls.io/github/FirebirdRender/rtltcp?branch=main)
+[![CI](https://github.com/FirebirdRender/rtltcp2026/workflows/CI/badge.svg)](https://github.com/FirebirdRender/rtltcp2026/actions)
+[![Coverage Status](https://coveralls.io/repos/github/FirebirdRender/rtltcp2026/badge.svg?branch=main)](https://coveralls.io/github/FirebirdRender/rtltcp2026?branch=main)
 [![Crates.io](https://img.shields.io/crates/v/rtltcp.svg)](https://crates.io/crates/rtltcp)
 [![Rust Version](https://img.shields.io/badge/rust-1.74%2B-blue)](https://www.rust-lang.org)
 
-A production-ready Rust implementation of [rtl-tcp](https://github.com/pinkavaj/rtl-sdr/blob/master/src/rtl_tcp.c) with improved stability, better buffering, security hardening, and support for systemd [socket activation](http://0pointer.de/blog/projects/socket-activation.html).
+This project is a specialized fork of the original [niclashoyer/rtltcp](https://github.com/niclashoyer/rtltcp). While it maintains the core functionality of the original implementation, it includes significant stability, security, and performance enhancements geared towards production environments.
+
+For the original project and its primary documentation, please refer to the [Original Repository](https://github.com/niclashoyer/rtltcp).
+
+## 🚀 Key Enhancements over Original
+
+Compared to the upstream version, this fork introduces the following critical improvements:
+
+### 🛡️ Security Hardening
+- **DoS Protection**: Integrated 30s read/write timeouts and 50ms command rate limiting to prevent connection exhaustion and flooding attacks.
+- **Strict Input Validation**: All protocol commands are bounds-checked to prevent invalid hardware states.
+- **Network Safety**: Default bind address changed to `127.0.0.1` to prevent accidental public exposure.
+- **SDR-Specific Hardening**: Integrated systemd service files with comprehensive security directives (namespaces, capabilities, and syscall filtering).
+
+### 📈 Stability & Performance
+- **Advanced Buffering**: Optimized TCP buffer management and `BufWriter` flushing logic to ensure compatibility with clients like `rtl_433` without causing data stalls.
+- **Robust Error Handling**: Replaced generic boxed errors with `RtlTcpError` and eliminated panics on client disconnects.
+- **Responsive Shutdown**: Improved signal handling for cleaner resource cleanup.
+
+### 🛠️ Tooling & Quality
+- **Extensive Testing**: Added 150+ test cases covering edge cases and protocol parsing.
+- **Modern Toolchain**: Updated to Rust 1.74+ and pinned dependencies for reproducible builds.
 
 ## Features
-
 - **Robust error handling** - No more crashes on client disconnect or device errors
 - **Graceful shutdown** - Proper cleanup of device resources and threads
 - **Security hardening** - Client logging, DoS protection, input validation
@@ -36,11 +56,11 @@ A production-ready Rust implementation of [rtl-tcp](https://github.com/pinkavaj/
 
 ### Download the latest binary release
 
-Download the [latest release](https://github.com/FirebirdRender/rtltcp/releases) for your platform:
+Download the [latest release](https://github.com/FirebirdRender/rtltcp2026/releases) for your platform:
 
 ```bash
 # x86_64 Linux
-wget https://github.com/FirebirdRender/rtltcp/releases/download/v0.7.4/rtltcp-v0.7.4-linux-x86_64.tar.gz
+wget https://github.com/FirebirdRender/rtltcp2026/releases/download/v0.7.4/rtltcp-v0.7.4-linux-x86_64.tar.gz
 tar xzf rtltcp-v0.7.4-linux-x86_64.tar.gz
 sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
@@ -54,8 +74,8 @@ Requirements:
 - libsystemd-dev
 
 ```bash
-git clone https://github.com/FirebirdRender/rtltcp.git
-cd rtltcp
+git clone https://github.com/FirebirdRender/rtltcp2026.git
+cd rtltcp2026
 cargo build --release
 sudo cp target/release/rtltcp /usr/local/bin/
 ```
@@ -74,8 +94,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
 
 # Clone and build
-git clone https://github.com/FirebirdRender/rtltcp.git
-cd rtltcp
+git clone https://github.com/FirebirdRender/rtltcp2026.git
+cd rtltcp2026
 cargo build --release
 
 # Install
@@ -89,7 +109,7 @@ No cross-compilation toolchain needed — builds natively on the target device.
 ### Command Line Options
 
 ```
-rtltcp 0.7.2
+rtltcp 0.7.4
 an I/Q spectrum server for RTL2832 based DVB-T receivers
 
 USAGE:
