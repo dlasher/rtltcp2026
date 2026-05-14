@@ -273,6 +273,7 @@ fn main() -> StdResult<(), RtlTcpError> {
     let sender_ctrlc = sender.clone();
     let should_exit = Arc::new(AtomicBool::new(false));
     let should_exit_ctrlc = should_exit.clone();
+    let is_agc_enabled = Arc::new(AtomicBool::new(true));
 
     let read_timeout = Duration::from_secs(args.read_timeout);
     let write_timeout = Duration::from_secs(args.write_timeout);
@@ -408,14 +409,20 @@ fn main() -> StdResult<(), RtlTcpError> {
                     CMD_SET_GAIN_MODE => {
                         let gain_mode = i32::from_be_bytes(payload);
                         if gain_mode > 0 {
-                            info!("gain mode set to manual (AGC off)");
+                            let changed = is_agc_enabled.swap(false, Ordering::SeqCst);
+                            if changed {
+                                info!("gain mode set to manual (AGC off)");
+                            }
                             with_control(&ctl, |guard| {
                                 if let Err(e) = guard.disable_agc() {
                                     warn!("failed to disable AGC: {e:?}");
                                 }
                             });
                         } else {
-                            info!("gain mode set to automatic (AGC on)");
+                            let changed = is_agc_enabled.swap(true, Ordering::SeqCst);
+                            if changed {
+                                info!("gain mode set to automatic (AGC on)");
+                            }
                             with_control(&ctl, |guard| {
                                 if let Err(e) = guard.enable_agc() {
                                     warn!("failed to enable AGC: {e:?}");
