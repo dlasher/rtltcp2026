@@ -4,3 +4,5 @@
 PROJECT/
 .lean-ctx/
 *.tar.gz
+release/
+releases/
