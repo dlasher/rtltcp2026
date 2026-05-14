@@ -113,9 +113,9 @@ fn validate_tuner_gain(gain: i32) -> Result<(), String> {
 
 /// Check if an IP address is in the whitelist
 fn is_ip_in_whitelist(client_ip: &str, whitelist: &[String]) -> bool {
-    // Parse the client IP
-    let client_ip: IpAddr = match client_ip.parse() {
-        Ok(ip) => ip,
+    // Parse the client IP, mapping IPv4-mapped IPv6 addresses to IPv4
+    let client_ip: IpAddr = match client_ip.parse::<IpAddr>() {
+        Ok(ip) => ip.to_canonical(),
         Err(_) => {
             warn!(target: "rtltcp", "Invalid client IP: {}", client_ip);
             return false;
@@ -778,5 +778,15 @@ mod tests {
         let whitelist = vec!["::1/128".to_string()];
         assert!(is_ip_in_whitelist("::1", &whitelist));
         assert!(!is_ip_in_whitelist("::2", &whitelist));
+    }
+
+    #[test]
+    fn test_whitelist_ipv4_mapped() {
+        let whitelist = vec!["10.4.10.0/24".to_string()];
+        // IPv4-mapped IPv6 addresses should be normalized and match IPv4 CIDRs
+        assert!(is_ip_in_whitelist("::ffff:10.4.10.71", &whitelist));
+        assert!(is_ip_in_whitelist("::ffff:10.4.10.1", &whitelist));
+        assert!(!is_ip_in_whitelist("::ffff:10.4.11.1", &whitelist));
+        assert!(!is_ip_in_whitelist("::ffff:192.168.1.1", &whitelist));
     }
 }
