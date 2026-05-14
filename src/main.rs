@@ -1,4 +1,5 @@
 use std::io::prelude::*;
+use std::io::BufWriter;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Shutdown, TcpListener};
 use std::ops::RangeInclusive;
@@ -192,9 +193,8 @@ struct Args {
     #[clap(short, long, default_value_t = 15)]
     buffers: u32,
 
-    /// tcp sending buffer size (in bytes), kept for backwards compatibility
+    /// tcp sending buffer size (bytes) [default: 512000, range: 1-10485760]
     #[clap(short = 's', long, default_value_t = 512000)]
-    #[allow(dead_code)]
     tcp_buffers: usize,
 
     /// socket read timeout in seconds
@@ -499,12 +499,27 @@ fn main() -> StdResult<(), RtlTcpError> {
         }
     });
 
+    let mut buf_write_stream = BufWriter::with_capacity(args.tcp_buffers, stream);
+    buf_write_stream.write_all(MAGIC_PACKET)?;
+    buf_write_stream.flush()?;
+
     let total_bytes_sent = Arc::new(AtomicU64::new(0));
     let read_result = reader.read_async(args.buffers, 0, |bytes| {
         total_bytes_sent.fetch_add(bytes.len() as u64, Ordering::Relaxed);
-        if let Err(e) = stream.write_all(bytes) {
+        if let Err(e) = buf_write_stream.write_all(bytes) {
             warn!(
                 "stream write failed after {} bytes, triggering shutdown: {e}",
+                total_bytes_sent.load(Ordering::Relaxed)
+            );
+            let _ = sender.try_send(());
+            return;
+        }
+        // Flush after each buffer so clients don't starve waiting for data.
+        // The BufWriter still helps by coalescing small partial writes within
+        // a single USB transfer batch.
+        if let Err(e) = buf_write_stream.flush() {
+            warn!(
+                "flush failed after {} bytes, triggering shutdown: {e}",
                 total_bytes_sent.load(Ordering::Relaxed)
             );
             let _ = sender.try_send(());

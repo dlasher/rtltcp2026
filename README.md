@@ -137,12 +137,14 @@ rtltcp -d 1
 ```
 
 #### Custom buffer settings
-Increase buffers for smoother streaming on high-bandwidth connections:
+Increase the number of USB transfer buffers for smoother streaming on high-bandwidth connections:
 ```bash
-rtltcp --buffers 20 --tcp-buffers 1024000
-# Or using short flags
-rtltcp -b 20 -s 1024000
+rtltcp --buffers 20
+# Or using short flag
+rtltcp -b 20
 ```
+
+**Note on `--tcp-buffers` / `-s`:** This controls the userspace buffer size for outgoing TCP writes. Each USB transfer buffer is flushed immediately, so large values (≥512KB) can cause clients like rtl_433 to time out waiting for data. The default of 512 000 bytes is a good balance. Only increase this for clients that buffer incoming data on their end.
 
 #### Custom timeout settings
 Increase timeouts for high-latency networks:
