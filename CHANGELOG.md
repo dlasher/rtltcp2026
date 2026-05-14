@@ -1,4 +1,10 @@
 # Changelog
+## [0.7.4] - 2026-05-14
+
+### Fixed
+- Restored BufWriter with per-buffer flush to fix rtl_433 stalls (while keeping the tcp_buffers CLI flag)
+- Added bytes-sent diagnostic for read_async troubleshooting
+
 
 All notable changes to this project will be documented in this file.
 

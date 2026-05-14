@@ -40,8 +40,8 @@ Download the [latest release](https://github.com/FirebirdRender/rtltcp/releases)
 
 ```bash
 # x86_64 Linux
-wget https://github.com/FirebirdRender/rtltcp/releases/download/v0.7.3/rtltcp-v0.7.3-linux-x86_64.tar.gz
-tar xzf rtltcp-v0.7.3-linux-x86_64.tar.gz
+wget https://github.com/FirebirdRender/rtltcp/releases/download/v0.7.4/rtltcp-v0.7.4-linux-x86_64.tar.gz
+tar xzf rtltcp-v0.7.4-linux-x86_64.tar.gz
 sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
 ```
