@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-05-13
+
+### Fixed
+- **IP whitelist IPv4-mapped IPv6 addresses**: Normalize IPv4-mapped IPv6 addresses (::ffff:a.b.c.d) to IPv4 before CIDR matching, fixing whitelist rejection when binding to 0.0.0.0
+
+### Changed
+- Simplified CI/CD to x86_64 native builds only, removed ARM cross-compilation attempts
+- Removed cargo.io publishing from CD workflow
+
+### CI/CD
+- Fixed rustfmt issues across all source files
+- Fixed MSRV job missing clippy component
+- Fixed publish dry-run failing on Cargo.lock dirty state
+
+## [0.7.1] - 2026-05-11
+
+### Changed
+- Removed "Publishing to Cargo" job from CD workflow
+
+## [0.7.1] - 2026-05-11
+
+### Changed
+- Simplified CI/CD to x86_64 native builds only, removed ARM cross-compilation attempts
+- Removed cargo.io publishing from CD workflow
+
+## [0.7.0] - 2026-05-11
+
+### Changed
+- Simplified CD workflow to x86_64 native builds only
+- Added permissions: contents: write to CD release job
+- Fixed release step to upload files directly with create command
+
+### CI/CD
+- Fixed rustfmt issues across all source files (48+ diffs)
+- Added clippy component to MSRV test job
+- Added --allow-dirty to publish dry-run
+- Regenerated Cargo.lock for MSRV compatibility (v3 format)
+
 ## [0.6.1] - 2026-05-11
 
 ### Fixed
