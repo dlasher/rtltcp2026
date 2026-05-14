@@ -1,5 +1,4 @@
 use std::io::prelude::*;
-use std::io::BufWriter;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Shutdown, TcpListener};
 use std::ops::RangeInclusive;
@@ -193,8 +192,9 @@ struct Args {
     #[clap(short, long, default_value_t = 15)]
     buffers: u32,
 
-    /// tcp sending buffer size (in bytes)
+    /// tcp sending buffer size (in bytes), kept for backwards compatibility
     #[clap(short = 's', long, default_value_t = 512000)]
+    #[allow(dead_code)]
     tcp_buffers: usize,
 
     /// socket read timeout in seconds
@@ -279,7 +279,7 @@ fn main() -> StdResult<(), RtlTcpError> {
     let write_timeout = Duration::from_secs(args.write_timeout);
 
     info!("waiting for connection…");
-    let (stream, addr) = listener.accept()?;
+    let (mut stream, addr) = listener.accept()?;
 
     // Check if the client IP is in the whitelist if one is configured
     let client_ip = match addr {
@@ -499,13 +499,10 @@ fn main() -> StdResult<(), RtlTcpError> {
         }
     });
 
-    let mut buf_write_stream = BufWriter::with_capacity(args.tcp_buffers, stream);
-    buf_write_stream.write_all(MAGIC_PACKET)?;
-
     let total_bytes_sent = Arc::new(AtomicU64::new(0));
     let read_result = reader.read_async(args.buffers, 0, |bytes| {
         total_bytes_sent.fetch_add(bytes.len() as u64, Ordering::Relaxed);
-        if let Err(e) = buf_write_stream.write_all(bytes) {
+        if let Err(e) = stream.write_all(bytes) {
             warn!(
                 "stream write failed after {} bytes, triggering shutdown: {e}",
                 total_bytes_sent.load(Ordering::Relaxed)
@@ -522,11 +519,6 @@ fn main() -> StdResult<(), RtlTcpError> {
 
     if let Err(e) = read_result {
         warn!("read_async error after {final_bytes} bytes: {e:?}");
-    }
-
-    // Flush buffer before shutting down
-    if let Err(e) = buf_write_stream.flush() {
-        warn!("failed to flush write buffer: {e}");
     }
 
     if let Err(e) = thread_cancel.join() {
