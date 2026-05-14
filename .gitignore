@@ -1,3 +1,6 @@
 /target
 .cargo-ok
 .DS_Store
+PROJECT/
+.lean-ctx/
+*.tar.gz
