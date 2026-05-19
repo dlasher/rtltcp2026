@@ -3,60 +3,56 @@
 [![CI](https://github.com/FirebirdRender/rtltcp2026/workflows/CI/badge.svg)](https://github.com/FirebirdRender/rtltcp2026/actions)
 [![Coverage Status](https://coveralls.io/repos/github/FirebirdRender/rtltcp2026/badge.svg?branch=main)](https://coveralls.io/github/FirebirdRender/rtltcp2026?branch=main)
 [![Crates.io](https://img.shields.io/crates/v/rtltcp.svg)](https://crates.io/crates/rtltcp)
-[![Rust Version](https://img.shields.io/badge/rust-1.74%2B-blue)](https://www.rust-lang.org)
+[![Rust Version](https://img.shields.io/badge/rust-1.75%2B-blue)](https://www.rust-lang.org)
 
-This project is a specialized fork of the original [niclashoyer/rtltcp](https://github.com/niclashoyer/rtltcp). While it maintains the core functionality of the original implementation, it includes significant stability, security, and performance enhancements geared towards production environments.
+Fork of [niclashoyer/rtltcp](https://github.com/niclashoyer/rtltcp) with stability, security, and performance improvements for production use.
 
-For the original project and its primary documentation, please refer to the [Original Repository](https://github.com/niclashoyer/rtltcp).
+## Key Enhancements over Original
 
-## 🚀 Key Enhancements over Original
+### Security Hardening
+- Server enforces 30s read/write timeouts and 50ms command rate limiting to prevent connection exhaustion and flooding attacks.
+- Protocol commands are bounds-checked before reaching hardware.
+- Default bind address is `127.0.0.1`, not all interfaces.
+- systemd service files ship with namespace isolation, capability dropping, and syscall filtering.
 
-Compared to the upstream version, this fork introduces the following critical improvements:
+### Stability & Performance
+- TCP buffer management flushes each USB transfer batch immediately. Clients like rtl_433 no longer stall waiting for data.
+- `RtlTcpError` replaces boxed errors. Client disconnects don't panic the server.
+- Signal handling cleans up device resources and threads on shutdown.
 
-### 🛡️ Security Hardening
-- **DoS Protection**: Integrated 30s read/write timeouts and 50ms command rate limiting to prevent connection exhaustion and flooding attacks.
-- **Strict Input Validation**: All protocol commands are bounds-checked to prevent invalid hardware states.
-- **Network Safety**: Default bind address changed to `127.0.0.1` to prevent accidental public exposure.
-- **SDR-Specific Hardening**: Integrated systemd service files with comprehensive security directives (namespaces, capabilities, and syscall filtering).
-
-### 📈 Stability & Performance
-- **Advanced Buffering**: Optimized TCP buffer management and `BufWriter` flushing logic to ensure compatibility with clients like `rtl_433` without causing data stalls.
-- **Robust Error Handling**: Replaced generic boxed errors with `RtlTcpError` and eliminated panics on client disconnects.
-- **Responsive Shutdown**: Improved signal handling for cleaner resource cleanup.
-
-### 🛠️ Tooling & Quality
-- **Extensive Testing**: Added 150+ test cases covering edge cases and protocol parsing.
-- **Modern Toolchain**: Updated to Rust 1.74+ and pinned dependencies for reproducible builds.
+### Tooling & Quality
+- 150+ test cases cover edge cases and protocol parsing.
+- Dependencies use semver-compatible ranges with `Cargo.lock` for reproducible builds.
 
 ## Features
-- **Robust error handling** - No more crashes on client disconnect or device errors
-- **Graceful shutdown** - Proper cleanup of device resources and threads
-- **Security hardening** - Client logging, DoS protection, input validation
-- **Systemd socket activation** - Start on demand, keep USB dongle cool when idle
-- **Production tested** - Runs reliably on Linux (x86_64, ARM via local build)
-- **Rate limiting** - Prevents command flooding attacks
-- **Input validation** - Protects against out-of-range values reaching hardware
+- Custom error type prevents crashes on client disconnect or device errors.
+- Signal handler shuts down device resources and threads cleanly.
+- Client IP logging, DoS protection, input validation.
+- systemd socket activation keeps the USB dongle cool when idle.
+- Runs reliably on Linux (x86_64, ARM via local build).
+- Rate limiting prevents command flooding attacks.
+- Input validation rejects out-of-range values before they reach hardware.
 
 ## Security Considerations
 
 ### Network Security
-- **Default localhost binding**: By default, rtltcp binds to `127.0.0.1` to prevent accidental network exposure
-- **DoS protection**: Built-in timeouts (30s default) and rate limiting (50ms command interval) prevent Slowloris and command flooding attacks
-- **Input validation**: All protocol commands are validated to prevent out-of-range values from reaching hardware
-- **Client logging**: IP addresses are logged on connection for security auditing
-- **Warning on all-interfaces binding**: Server warns when binding to 0.0.0.0 or :: to alert administrators
+- Listens on `127.0.0.1` by default. No accidental network exposure.
+- 30s timeouts and 50ms command interval prevent Slowloris and command flooding.
+- All command payloads validated against hardware-safe ranges.
+- Client IP logged on connection for security auditing.
+- Server warns when binding to `0.0.0.0` or `::`.
 
 ### System Security
-- **Systemd hardening**: Service files include security directives to limit process capabilities
-- **Minimal privileges**: Process runs with minimal required permissions
-- **No root requirements**: Application does not require root privileges for normal operation
-- **Memory safety**: Rust's ownership model prevents buffer overflows and use-after-free bugs
+- systemd service files restrict process capabilities, namespaces, and syscalls.
+- Process runs with minimal required permissions.
+- No root privileges required for normal operation.
+- Rust's ownership model prevents buffer overflows and use-after-free bugs.
 
 ## Installation
 
 ### Download the latest binary release
 
-Download the [latest release](https://github.com/FirebirdRender/rtltcp2026/releases) for your platform:
+Grab the [latest release](https://github.com/FirebirdRender/rtltcp2026/releases):
 
 ```bash
 # x86_64 Linux
@@ -69,7 +65,7 @@ chmod +x /usr/local/bin/rtltcp
 ### Build from source
 
 Requirements:
-- Rust 1.74 or later
+- Rust 1.75 or later
 - librtlsdr-dev
 - libsystemd-dev
 
@@ -82,27 +78,19 @@ sudo cp target/release/rtltcp /usr/local/bin/
 
 ### Building for ARM (aarch64)
 
-Pre-built binaries are only available for x86_64 Linux. To build on ARM hardware (Odroid, Raspberry Pi, etc.):
+Pre-built binaries only cover x86_64 Linux. On ARM hardware (Odroid, Raspberry Pi):
 
 ```bash
-# Install dependencies
-sudo apt update
 sudo apt install -y librtlsdr-dev libsystemd-dev build-essential pkg-config
-
-# Install Rust (if not already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
-
-# Clone and build
 git clone https://github.com/FirebirdRender/rtltcp2026.git
 cd rtltcp2026
 cargo build --release
-
-# Install
 sudo cp target/release/rtltcp /usr/local/bin/
 ```
 
-No cross-compilation toolchain needed — builds natively on the target device.
+Builds natively on the target device. No cross-compilation toolchain needed.
 
 ## Usage
 
@@ -136,10 +124,8 @@ rtltcp
 ```
 
 #### Custom listen address and port
-Bind to a specific IP and port:
 ```bash
 rtltcp --address 192.168.1.100 --port 8000
-# Or using short flags
 rtltcp -a 192.168.1.100 -p 8000
 ```
 
@@ -149,40 +135,29 @@ rtltcp --address 0.0.0.0 --port 1234
 ```
 
 #### Custom device index
-Use a specific RTL-SDR device when multiple are connected:
 ```bash
 rtltcp --device-index 1
-# Or using short flag
 rtltcp -d 1
 ```
 
 #### Custom buffer settings
-Increase the number of USB transfer buffers for smoother streaming on high-bandwidth connections:
+Increase USB transfer buffers for smoother streaming on high-bandwidth connections:
 ```bash
 rtltcp --buffers 20
-# Or using short flag
 rtltcp -b 20
 ```
 
-**Note on `--tcp-buffers` / `-s`:** This controls the userspace buffer size for outgoing TCP writes. Each USB transfer buffer is flushed immediately, so large values (≥512KB) can cause clients like rtl_433 to time out waiting for data. The default of 512 000 bytes is a good balance. Only increase this for clients that buffer incoming data on their end.
+`--tcp-buffers` / `-s` controls the userspace buffer size for outgoing TCP writes. Each USB transfer buffer flushes immediately. Values above 512KB can cause clients like rtl_433 to time out waiting for data. Only increase this for clients that buffer incoming data.
 
 #### Custom timeout settings
-Increase timeouts for high-latency networks:
 ```bash
 rtltcp --read-timeout 60 --write-timeout 60
-```
-
-Reduce timeouts for faster disconnect detection:
-```bash
 rtltcp --read-timeout 10 --write-timeout 10
 ```
 
 #### Multiple device setup
-Run multiple instances for different devices:
 ```bash
-# Device 0 on port 1234
 rtltcp --device-index 0 --port 1234 &
-# Device 1 on port 1235
 rtltcp --device-index 1 --port 1235 &
 ```
 
@@ -207,7 +182,7 @@ rtltcp \
 
 ### Using Systemd Socket Activation
 
-By using systemd socket activation, rtltcp starts only when a client connects, keeping the RTL-SDR dongle cool when idle.
+systemd socket activation starts rtltcp only when a client connects. The RTL-SDR dongle stays cool when idle.
 
 Create `/etc/systemd/system/rtltcp.service`:
 
@@ -267,7 +242,7 @@ sudo systemctl start rtltcp.socket
 
 ### Hardened Systemd Service File
 
-For production environments, use this hardened configuration with comprehensive security directives:
+For production environments:
 
 ```ini
 [Unit]
@@ -328,20 +303,18 @@ SystemCallFilter=~@privileged @reboot @cpu-emulation @debug @obsolete
 WantedBy=multi-user.target
 ```
 
-**Hardening Directives Explained:**
-
 | Directive | Purpose |
 |-----------|---------|
 | `NoNewPrivileges=true` | Prevents the process from gaining new privileges |
-| `ProtectSystem=strict` | Makes the entire file system hierarchy read-only |
-| `ProtectHome=true` | Makes /home, /root, /run/user inaccessible |
-| `PrivateTmp=true` | Provides an isolated /tmp namespace |
-| `PrivateUsers=true` | Runs the service with a private user namespace |
+| `ProtectSystem=strict` | Makes file system hierarchy read-only |
+| `ProtectHome=true` | Blocks access to /home, /root, /run/user |
+| `PrivateTmp=true` | Isolates /tmp namespace |
+| `PrivateUsers=true` | Runs with private user namespace |
 | `ProtectKernelModules=true` | Prevents loading kernel modules |
 | `ProtectKernelTunables=true` | Makes /sys and /proc read-only |
 | `RestrictAddressFamilies` | Limits socket address families |
 | `SystemCallFilter` | Blocks dangerous system call categories |
-| `MemoryDenyWriteExecute=true` | Prevents creating writable+executable memory |
+| `MemoryDenyWriteExecute=true` | Prevents writable+executable memory |
 | `CapabilityBoundingSet=` | Drops all Linux capabilities |
 | `UMask=0077` | Restricts file permissions created by the service |
 
@@ -369,53 +342,32 @@ On connect, the server sends a 12-byte magic packet:
 
 ### From v0.3.x to v0.4.0 (and later)
 
-1. **Custom error type**: `RtlTcpError` now replaces `Box<dyn std::error::Error>`. This is transparent for CLI users but affects library consumers.
-2. **Enhanced shutdown**: Signal handling is now more responsive with proper stream shutdown.
-3. **Improved logging**: Unknown commands are now logged with a running counter.
+1. `RtlTcpError` replaces `Box<dyn std::error::Error>`. Transparent for CLI users but affects library consumers.
+2. Signal handling shuts down the stream on SIGINT/SIGTERM.
+3. Unknown commands log with a running counter.
 
-**No configuration changes required.** Existing command-line invocations work identically.
+Command-line invocations from v0.3.x work without changes.
 
 ### From v0.2.x to v0.3.0
 
-1. **BREAKING: Default bind address changed** from `[::]` to `127.0.0.1`
-   - **Impact**: Clients connecting from other machines will no longer connect by default
-   - **Fix**: Add `--address 0.0.0.0` or `--address [::]` to restore previous behavior
-   - **Example**: `rtltcp --address 0.0.0.0 --port 1234`
-
-2. **Input validation added** for all protocol commands
-   - **Impact**: Out-of-range values are now rejected silently (logged as warnings)
-   - **Fix**: Ensure your client sends values within valid ranges
-
-3. **Rate limiting added** (50ms minimum between commands)
-   - **Impact**: Rapid command sequences may be silently dropped
-   - **Fix**: Space commands at least 50ms apart if sending programmatically
-
-4. **Read/write timeouts** now default to 30 seconds
-   - **Impact**: Idle connections are closed after 30 seconds
-   - **Fix**: Increase with `--read-timeout` and `--write-timeout` if needed
+1. Default bind address changed from `[::]` to `127.0.0.1`. Add `--address 0.0.0.0` or `--address [::]` for network access.
+2. Protocol commands are validated. Out-of-range values are rejected silently.
+3. Rate limiting allows 1 command per 50ms minimum. Rapid sequences may be silently dropped.
+4. Read/write timeouts default to 30 seconds. Increase with `--read-timeout` and `--write-timeout` if needed.
 
 ### From v0.1.x to v0.2.x
 
-1. **Crash fixes**: Multiple panic-causing bugs fixed. Existing configurations work identically.
-2. **Signal handling**: Improved SIGINT/SIGTERM handling for clean shutdown.
-3. **Command 0x03 fix**: Manual gain mode now correctly disables AGC (previously was backwards).
+1. Multiple panic-causing bugs fixed. Existing configurations work identically.
+2. Improved SIGINT/SIGTERM handling for clean shutdown.
+3. Command 0x03 now correctly disables AGC when setting manual gain mode (previously backwards).
 
 ## Building
 
 ```bash
-# Development build
 cargo build
-
-# Release build (with optimizations)
 cargo build --release
-
-# Run tests
 cargo test --all-features
-
-# Run with debug logging
 RUST_LOG=debug cargo run -- --port 1234
-
-# Run with info logging
 RUST_LOG=info cargo run -- --port 1234
 ```
 
@@ -423,7 +375,7 @@ RUST_LOG=info cargo run -- --port 1234
 
 - RTL2832-based DVB-T receiver (RTL-SDR)
 - Linux with libusb 1.0+
-- Rust 1.74+ (for building from source)
+- Rust 1.75+ (for building from source)
 
 ## License
 
@@ -438,4 +390,4 @@ at your option.
 
 ## Contributing
 
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
