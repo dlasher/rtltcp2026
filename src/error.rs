@@ -1,7 +1,6 @@
 use std::fmt;
 
 /// Custom error type for RtlTcp errors
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum RtlTcpError {
     /// Device-related errors
@@ -10,8 +9,6 @@ pub enum RtlTcpError {
     Network(String),
     /// Configuration errors
     Config(String),
-    /// Validation errors
-    Validation(String),
     /// I/O errors
     Io(std::io::Error),
 }
@@ -22,7 +19,6 @@ impl fmt::Display for RtlTcpError {
             RtlTcpError::Device(msg) => write!(f, "Device error: {}", msg),
             RtlTcpError::Network(msg) => write!(f, "Network error: {}", msg),
             RtlTcpError::Config(msg) => write!(f, "Configuration error: {}", msg),
-            RtlTcpError::Validation(msg) => write!(f, "Validation error: {}", msg),
             RtlTcpError::Io(e) => write!(f, "I/O error: {}", e),
         }
     }

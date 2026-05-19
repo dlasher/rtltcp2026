@@ -361,7 +361,7 @@ dependencies = [
 
 [[package]]
 name = "rtltcp"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "clap",
  "ctrlc",

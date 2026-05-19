@@ -111,6 +111,20 @@ fn validate_tuner_gain(gain: i32) -> Result<(), String> {
     }
 }
 
+/// Check if an IP address passes the whitelist, returning Ok if allowed, Err if rejected.
+fn check_whitelist(client_ip: &str, whitelist: &[String]) -> StdResult<(), RtlTcpError> {
+    if whitelist.is_empty() {
+        return Ok(());
+    }
+    if is_ip_in_whitelist(client_ip, whitelist) {
+        Ok(())
+    } else {
+        Err(RtlTcpError::Network(
+            "connection rejected: IP not in whitelist".to_string(),
+        ))
+    }
+}
+
 /// Check if an IP address is in the whitelist
 fn is_ip_in_whitelist(client_ip: &str, whitelist: &[String]) -> bool {
     // Parse the client IP, mapping IPv4-mapped IPv6 addresses to IPv4
@@ -137,6 +151,27 @@ fn is_ip_in_whitelist(client_ip: &str, whitelist: &[String]) -> bool {
     }
 
     false
+}
+
+/// Tracks whether AGC is enabled and detects state changes to suppress redundant log messages.
+struct AgcState {
+    enabled: AtomicBool,
+}
+
+impl AgcState {
+    fn new() -> Self {
+        Self {
+            enabled: AtomicBool::new(true),
+        }
+    }
+
+    fn enable(&self) -> bool {
+        !self.enabled.swap(true, Ordering::SeqCst)
+    }
+
+    fn disable(&self) -> bool {
+        self.enabled.swap(false, Ordering::SeqCst)
+    }
 }
 
 /// Simple rate limiter that tracks the time of the last allowed command.
@@ -273,31 +308,18 @@ fn main() -> StdResult<(), RtlTcpError> {
     let sender_ctrlc = sender.clone();
     let should_exit = Arc::new(AtomicBool::new(false));
     let should_exit_ctrlc = should_exit.clone();
-    let is_agc_enabled = Arc::new(AtomicBool::new(true));
+    let agc_state = Arc::new(AgcState::new());
 
     let read_timeout = Duration::from_secs(args.read_timeout);
     let write_timeout = Duration::from_secs(args.write_timeout);
 
     info!("waiting for connection…");
-    let (mut stream, addr) = listener.accept()?;
+    let (stream, addr) = listener.accept()?;
 
-    // Check if the client IP is in the whitelist if one is configured
-    let client_ip = match addr {
-        std::net::SocketAddr::V4(v4_addr) => v4_addr.ip().to_string(),
-        std::net::SocketAddr::V6(v6_addr) => v6_addr.ip().to_string(),
-    };
-
-    // If whitelist is configured, check the client IP against it
-    if !args.whitelist.is_empty() {
-        let ip_in_whitelist = is_ip_in_whitelist(&client_ip, &args.whitelist);
-        if !ip_in_whitelist {
-            info!(
-                "Client IP {} is not in whitelist, rejecting connection",
-                client_ip
-            );
-            warn!(target: "rtltcp", "Connection from {} refused due to IP not in whitelist", client_ip);
-            return Ok(());
-        }
+    let client_ip = addr.ip().to_canonical().to_string();
+    if let Err(e) = check_whitelist(&client_ip, &args.whitelist) {
+        warn!(target: "rtltcp", "Connection from {client_ip} refused — not in whitelist");
+        return Err(e);
     }
 
     info!("connection from {addr}");
@@ -341,6 +363,7 @@ fn main() -> StdResult<(), RtlTcpError> {
         let ctl = ctl.clone();
         let should_exit = should_exit.clone();
         let unknown_command_count = unknown_command_count.clone();
+        let agc_state = agc_state.clone();
         let mut stream = stream.try_clone()?;
         move || {
             let mut buf = [0u8; COMMAND_HEADER_SIZE];
@@ -409,8 +432,7 @@ fn main() -> StdResult<(), RtlTcpError> {
                     CMD_SET_GAIN_MODE => {
                         let gain_mode = i32::from_be_bytes(payload);
                         if gain_mode > 0 {
-                            let changed = is_agc_enabled.swap(false, Ordering::SeqCst);
-                            if changed {
+                            if agc_state.disable() {
                                 info!("gain mode set to manual (AGC off)");
                             }
                             with_control(&ctl, |guard| {
@@ -419,8 +441,7 @@ fn main() -> StdResult<(), RtlTcpError> {
                                 }
                             });
                         } else {
-                            let changed = is_agc_enabled.swap(true, Ordering::SeqCst);
-                            if changed {
+                            if agc_state.enable() {
                                 info!("gain mode set to automatic (AGC on)");
                             }
                             with_control(&ctl, |guard| {
@@ -459,14 +480,18 @@ fn main() -> StdResult<(), RtlTcpError> {
                     CMD_SET_AGC => {
                         let agc = u32::from_be_bytes(payload) == 1u32;
                         if agc {
-                            info!("setting automatic gain control to on");
+                            if agc_state.enable() {
+                                info!("setting automatic gain control to on");
+                            }
                             with_control(&ctl, |guard| {
                                 if let Err(e) = guard.enable_agc() {
                                     warn!("failed to enable AGC: {e:?}");
                                 }
                             });
                         } else {
-                            info!("setting automatic gain control to off");
+                            if agc_state.disable() {
+                                info!("setting automatic gain control to off");
+                            }
                             with_control(&ctl, |guard| {
                                 if let Err(e) = guard.disable_agc() {
                                     warn!("failed to disable AGC: {e:?}");
@@ -505,23 +530,15 @@ fn main() -> StdResult<(), RtlTcpError> {
 
     let total_bytes_sent = Arc::new(AtomicU64::new(0));
     let read_result = reader.read_async(args.buffers, 0, |bytes| {
-        total_bytes_sent.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+        let sent =
+            total_bytes_sent.fetch_add(bytes.len() as u64, Ordering::Relaxed) + bytes.len() as u64;
         if let Err(e) = buf_write_stream.write_all(bytes) {
-            warn!(
-                "stream write failed after {} bytes, triggering shutdown: {e}",
-                total_bytes_sent.load(Ordering::Relaxed)
-            );
+            warn!("stream write failed after {sent} bytes, triggering shutdown: {e}",);
             let _ = sender.try_send(());
             return;
         }
-        // Flush after each buffer so clients don't starve waiting for data.
-        // The BufWriter still helps by coalescing small partial writes within
-        // a single USB transfer batch.
         if let Err(e) = buf_write_stream.flush() {
-            warn!(
-                "flush failed after {} bytes, triggering shutdown: {e}",
-                total_bytes_sent.load(Ordering::Relaxed)
-            );
+            warn!("flush failed after {sent} bytes, triggering shutdown: {e}",);
             let _ = sender.try_send(());
         }
     });
@@ -743,6 +760,65 @@ mod tests {
         limiter.last_command = Instant::now();
         std::thread::sleep(Duration::from_millis(15));
         assert!(limiter.check());
+    }
+
+    // --- AgcState tests ---
+
+    #[test]
+    fn test_agc_state_initial_true() {
+        let agc = AgcState::new();
+        assert!(agc.enabled.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_agc_state_enable_unchanged() {
+        let agc = AgcState::new();
+        assert!(!agc.enable());
+    }
+
+    #[test]
+    fn test_agc_state_disable_changed() {
+        let agc = AgcState::new();
+        assert!(agc.disable());
+    }
+
+    #[test]
+    fn test_agc_state_enable_after_disable() {
+        let agc = AgcState::new();
+        agc.disable();
+        assert!(agc.enable());
+    }
+
+    #[test]
+    fn test_agc_state_disable_twice_unchanged() {
+        let agc = AgcState::new();
+        agc.disable();
+        assert!(!agc.disable());
+    }
+
+    // --- check_whitelist tests ---
+
+    #[test]
+    fn test_check_whitelist_matching_ip_allows() {
+        let whitelist = vec!["192.168.1.0/24".to_string()];
+        let result = check_whitelist("192.168.1.50", &whitelist);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_whitelist_non_matching_rejects() {
+        let whitelist = vec!["192.168.1.0/24".to_string()];
+        let result = check_whitelist("10.0.0.1", &whitelist);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, RtlTcpError::Network(_)));
+    }
+
+    #[test]
+    fn test_check_whitelist_empty_allows() {
+        let whitelist: Vec<String> = vec![];
+        let result = check_whitelist("10.0.0.1", &whitelist);
+        assert!(result.is_ok());
     }
 
     // --- IP whitelist tests ---

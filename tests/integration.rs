@@ -822,19 +822,15 @@ fn test_all_commands_invalid_inputs() {
 #[test]
 fn test_zero_payload_commands() {
     // All commands with zero payload should be valid where applicable
-    let _zero_buf: [u8; 5] = [CMD_SET_FREQUENCY, 0, 0, 0, 0];
     let freq = u32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_frequency(freq).is_ok());
 
-    let _zero_buf: [u8; 5] = [CMD_SET_SAMPLE_RATE, 0, 0, 0, 0];
     let sr = u32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_sample_rate(sr).is_ok());
 
-    let _zero_buf: [u8; 5] = [CMD_SET_PPM, 0, 0, 0, 0];
     let ppm = i32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_ppm(ppm).is_ok());
 
-    let _zero_buf: [u8; 5] = [CMD_SET_TUNER_GAIN, 0, 0, 0, 0];
     let gain = i32::from_be_bytes([0, 0, 0, 0]);
     assert!(validate_tuner_gain(gain).is_ok());
 }
