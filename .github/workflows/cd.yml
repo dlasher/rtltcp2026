@@ -6,10 +6,18 @@ on:
       - 'v*'
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: aarch64
 
     steps:
       - name: Checkout repository
@@ -17,34 +25,56 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-gnu
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
-      - name: Install system dependencies
-        shell: bash
+      - name: Install dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y librtlsdr-dev libsystemd-dev
 
-      - name: Build for x86_64 (native)
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Strip binary and package (x86_64)
+      - name: Package
         shell: bash
         run: |
-          strip target/x86_64-unknown-linux-gnu/release/rtltcp2026
-          RELEASE_NAME=rtltcp2026-${GITHUB_REF#refs/tags/}-linux-x86_64
-          tar czvf "$RELEASE_NAME.tar.gz" -C target/x86_64-unknown-linux-gnu/release rtltcp2026
+          strip target/${{ matrix.target }}/release/rtltcp2026
+          RELEASE_NAME=rtltcp2026-${GITHUB_REF#refs/tags/}-linux-${{ matrix.arch }}
+          tar czvf "$RELEASE_NAME.tar.gz" -C target/${{ matrix.target }}/release rtltcp2026
           sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
+          mkdir -p artifacts
+          mv "$RELEASE_NAME.tar.gz" "$RELEASE_NAME.sha256" artifacts/
 
-      - name: Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.arch }}
+          path: artifacts/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release and upload assets
         shell: bash
         run: |
+          ls -la artifacts/
           gh release create "$GITHUB_REF" \
             --title "$GITHUB_REF" \
             --notes "Release $(date)" \
-            rtltcp2026-${GITHUB_REF#refs/tags/}-linux-x86_64.tar.gz \
-            rtltcp2026-${GITHUB_REF#refs/tags/}-linux-x86_64.sha256
+            artifacts/rtltcp2026-*.tar.gz \
+            artifacts/rtltcp2026-*.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
