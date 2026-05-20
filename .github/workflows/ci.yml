@@ -90,13 +90,13 @@ jobs:
         run: cargo publish --dry-run --allow-dirty
 
   msrv:
-    name: MSRV Test (1.74)
+    name: MSRV Test (1.75)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.74
+        uses: dtolnay/rust-toolchain@1.75
         with:
           components: clippy
       - name: install dependencies
