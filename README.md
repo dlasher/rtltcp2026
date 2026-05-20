@@ -1,8 +1,7 @@
 # rtltcp-2026
 
 [![CI](https://github.com/dlasher/rtltcp2026/workflows/CI/badge.svg)](https://github.com/dlasher/rtltcp2026/actions)
-[![Coverage Status](https://coveralls.io/repos/github/dlasher/rtltcp2026/badge.svg?branch=main)](https://coveralls.io/github/dlasher/rtltcp2026?branch=main)
-[![Crates.io](https://img.shields.io/crates/v/rtltcp.svg)](https://crates.io/crates/rtltcp)
+[![Crates.io](https://img.shields.io/crates/v/rtltcp2026.svg)](https://crates.io/crates/rtltcp2026)
 [![Rust Version](https://img.shields.io/badge/rust-1.75%2B-blue)](https://www.rust-lang.org)
 
 Fork of [niclashoyer/rtltcp](https://github.com/niclashoyer/rtltcp) with stability, security, and performance improvements for production use.
