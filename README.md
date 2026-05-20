@@ -1,7 +1,7 @@
 # rtltcp-2026
 
-[![CI](https://github.com/FirebirdRender/rtltcp2026/workflows/CI/badge.svg)](https://github.com/FirebirdRender/rtltcp2026/actions)
-[![Coverage Status](https://coveralls.io/repos/github/FirebirdRender/rtltcp2026/badge.svg?branch=main)](https://coveralls.io/github/FirebirdRender/rtltcp2026?branch=main)
+[![CI](https://github.com/dlasher/rtltcp2026/workflows/CI/badge.svg)](https://github.com/dlasher/rtltcp2026/actions)
+[![Coverage Status](https://coveralls.io/repos/github/dlasher/rtltcp2026/badge.svg?branch=main)](https://coveralls.io/github/dlasher/rtltcp2026?branch=main)
 [![Crates.io](https://img.shields.io/crates/v/rtltcp.svg)](https://crates.io/crates/rtltcp)
 [![Rust Version](https://img.shields.io/badge/rust-1.75%2B-blue)](https://www.rust-lang.org)
 
@@ -52,11 +52,11 @@ Fork of [niclashoyer/rtltcp](https://github.com/niclashoyer/rtltcp) with stabili
 
 ### Download the latest binary release
 
-Grab the [latest release](https://github.com/FirebirdRender/rtltcp2026/releases):
+Grab the [latest release](https://github.com/dlasher/rtltcp2026/releases):
 
 ```bash
 # x86_64 Linux
-wget https://github.com/FirebirdRender/rtltcp2026/releases/download/v0.7.4/rtltcp-v0.7.4-linux-x86_64.tar.gz
+wget https://github.com/dlasher/rtltcp2026/releases/download/v0.7.4/rtltcp-v0.7.4-linux-x86_64.tar.gz
 tar xzf rtltcp-v0.7.4-linux-x86_64.tar.gz
 sudo mv rtltcp /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp
@@ -70,7 +70,7 @@ Requirements:
 - libsystemd-dev
 
 ```bash
-git clone https://github.com/FirebirdRender/rtltcp2026.git
+git clone https://github.com/dlasher/rtltcp2026.git
 cd rtltcp2026
 cargo build --release
 sudo cp target/release/rtltcp /usr/local/bin/
@@ -84,7 +84,7 @@ Pre-built binaries only cover x86_64 Linux. On ARM hardware (Odroid, Raspberry P
 sudo apt install -y librtlsdr-dev libsystemd-dev build-essential pkg-config
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
-git clone https://github.com/FirebirdRender/rtltcp2026.git
+git clone https://github.com/dlasher/rtltcp2026.git
 cd rtltcp2026
 cargo build --release
 sudo cp target/release/rtltcp /usr/local/bin/
