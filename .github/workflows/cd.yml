@@ -24,8 +24,8 @@ jobs:
       - name: Install system dependencies
         shell: bash
         run: |
-           sudo apt-get update -y
-           sudo apt-get install -y librtlsdr-dev libsystemd-dev
+          sudo apt-get update -y
+          sudo apt-get install -y librtlsdr-dev libsystemd-dev
 
       - name: Build for x86_64 (native)
         run: cargo build --release --target x86_64-unknown-linux-gnu
@@ -33,9 +33,9 @@ jobs:
       - name: Strip binary and package (x86_64)
         shell: bash
         run: |
-          strip target/x86_64-unknown-linux-gnu/release/rtltcp
-          RELEASE_NAME=rtltcp-${GITHUB_REF#refs/tags/}-linux-x86_64
-          tar czvf "$RELEASE_NAME.tar.gz" -C target/x86_64-unknown-linux-gnu/release rtltcp
+          strip target/x86_64-unknown-linux-gnu/release/rtltcp2026
+          RELEASE_NAME=rtltcp2026-${GITHUB_REF#refs/tags/}-linux-x86_64
+          tar czvf "$RELEASE_NAME.tar.gz" -C target/x86_64-unknown-linux-gnu/release rtltcp2026
           sha256sum "$RELEASE_NAME.tar.gz" > "$RELEASE_NAME.sha256"
 
       - name: Release
@@ -44,9 +44,7 @@ jobs:
           gh release create "$GITHUB_REF" \
             --title "$GITHUB_REF" \
             --notes "Release $(date)" \
-            rtltcp-${GITHUB_REF#refs/tags/}-linux-x86_64.tar.gz \
-            rtltcp-${GITHUB_REF#refs/tags/}-linux-x86_64.sha256
+            rtltcp2026-${GITHUB_REF#refs/tags/}-linux-x86_64.tar.gz \
+            rtltcp2026-${GITHUB_REF#refs/tags/}-linux-x86_64.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  
