@@ -1,4 +1,4 @@
-//! Comprehensive integration tests for rtltcp
+//! Comprehensive integration tests for rtltcp2026
 //!
 //! These tests verify functionality without requiring
 //! an RTL-SDR dongle. They test what can be tested without hardware.
@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 /// Verify the binary exists and can print help
 #[test]
 fn binary_exists_and_prints_help() {
-    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp"))
+    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
         .arg("--help")
         .output()
         .expect("failed to execute binary");
@@ -37,7 +37,7 @@ fn binary_exists_and_prints_help() {
 /// Verify the binary prints version
 #[test]
 fn binary_prints_version() {
-    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp"))
+    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
         .arg("--version")
         .output()
         .expect("failed to execute binary");
@@ -50,7 +50,7 @@ fn binary_prints_version() {
 /// Test that help output contains all CLI options
 #[test]
 fn help_shows_all_options() {
-    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp"))
+    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
         .arg("--help")
         .output()
         .expect("failed to execute binary");
@@ -86,7 +86,7 @@ fn help_shows_all_options() {
 /// Test that short flags work
 #[test]
 fn short_flags_work() {
-    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp"))
+    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
         .arg("-h")
         .output()
         .expect("failed to execute binary");

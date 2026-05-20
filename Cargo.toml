@@ -1,5 +1,5 @@
 [package]
-name = "rtltcp"
+name = "rtltcp2026"
 description = "A rust implementation of rtl-tcp with better buffering and support for systemd socket activation."
 version = "0.7.4"
 authors = ["Niclas Hoyer <info@niclashoyer.de>"]

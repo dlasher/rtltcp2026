@@ -360,7 +360,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rtltcp"
+name = "rtltcp2026"
 version = "0.7.4"
 dependencies = [
  "clap",
