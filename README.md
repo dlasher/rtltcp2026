@@ -55,8 +55,14 @@ Grab the [latest release](https://github.com/dlasher/rtltcp2026/releases):
 
 ```bash
 # x86_64 Linux
-wget https://github.com/dlasher/rtltcp2026/releases/download/v0.7.6/rtltcp2026-v0.7.6-linux-x86_64.tar.gz
-tar xzf rtltcp2026-v0.7.6-linux-x86_64.tar.gz
+wget https://github.com/dlasher/rtltcp2026/releases/download/v0.8.0/rtltcp2026-v0.8.0-linux-x86_64.tar.gz
+tar xzf rtltcp2026-v0.8.0-linux-x86_64.tar.gz
+sudo mv rtltcp2026 /usr/local/bin/
+chmod +x /usr/local/bin/rtltcp2026
+
+# aarch64 Linux (Odroid, Raspberry Pi 4/5, etc.)
+wget https://github.com/dlasher/rtltcp2026/releases/download/v0.8.0/rtltcp2026-v0.8.0-linux-aarch64.tar.gz
+tar xzf rtltcp2026-v0.8.0-linux-aarch64.tar.gz
 sudo mv rtltcp2026 /usr/local/bin/
 chmod +x /usr/local/bin/rtltcp2026
 ```

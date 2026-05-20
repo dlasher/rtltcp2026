@@ -61,6 +61,8 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -71,10 +73,13 @@ jobs:
         shell: bash
         run: |
           ls -la artifacts/
-          gh release create "$GITHUB_REF" \
-            --title "$GITHUB_REF" \
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
             --notes "Release $(date)" \
             artifacts/rtltcp2026-*.tar.gz \
-            artifacts/rtltcp2026-*.sha256
+            artifacts/rtltcp2026-*.sha256 || \
+          gh release upload "${{ github.ref_name }}" \
+            artifacts/rtltcp2026-*.tar.gz \
+            artifacts/rtltcp2026-*.sha256 --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
