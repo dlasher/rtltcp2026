@@ -22,6 +22,7 @@ mod proxy;
 pub mod stream;
 use crate::control::*;
 use crate::error::RtlTcpError;
+use chacha20::cipher::{KeyIvInit, StreamCipher};
 
 #[derive(Parser, Debug)]
 #[clap(
@@ -459,6 +460,8 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
     let should_exit = Arc::new(AtomicBool::new(false));
     let (sender, receiver) = sync_channel(1);
     let all_streams: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
+    let encryption_key = parse_encryption_key(&args)?;
+    let encryption_nonces: Arc<Mutex<Option<([u8; 12], [u8; 12])>>> = Arc::new(Mutex::new(None));
 
     // Signal handler: sets exit flag
     ctrlc::set_handler({
@@ -518,7 +521,21 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
             let mrx = tx.subscribe();
             let mexit = should_exit.clone();
             let mstream = master_stream.try_clone()?;
-            thread::spawn(move || stream::write_client_loop(mstream, mrx, &mexit));
+            let enonces = encryption_nonces.clone();
+            let ekey = encryption_key;
+            thread::spawn(move || {
+                if let Some(key) = ekey {
+                    loop {
+                        if let Some((my_nonce, _)) = *enonces.lock().unwrap() {
+                            let ew = encryption::EncryptedWriter::new(mstream, key, my_nonce);
+                            return stream::write_client_loop(ew, mrx, &mexit);
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                } else {
+                    stream::write_client_loop(mstream, mrx, &mexit);
+                }
+            });
         }
 
         // Send magic packet
@@ -531,6 +548,7 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
         let thread_ctl = spawn_master_control_thread(
             master_stream.try_clone()?, ctl.clone(), agc_state.clone(),
             unknown_count, should_exit.clone(), read_timeout,
+            encryption_key, encryption_nonces.clone(),
         );
 
         // Wait for control thread (exits on master disconnect)
@@ -562,15 +580,23 @@ fn spawn_master_control_thread(
     unknown_command_count: Arc<Mutex<u64>>,
     should_exit: Arc<AtomicBool>,
     read_timeout: Duration,
+    encryption_key: Option<[u8; 32]>,
+    encryption_nonces: Arc<Mutex<Option<([u8; 12], [u8; 12])>>>,
 ) -> thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut stream = stream;
         stream.set_read_timeout(Some(read_timeout)).ok();
+        let mut read_cipher: Option<chacha20::ChaCha20> = None;
+        let mut write_cipher: Option<chacha20::ChaCha20> = None;
         let mut buf = [0u8; COMMAND_HEADER_SIZE];
         let mut rate_limiter = RateLimiter::new(COMMAND_RATE_LIMIT_INTERVAL);
         loop {
                 match stream.read_exact(&mut buf) {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        if let Some(ref mut cipher) = read_cipher {
+                            cipher.apply_keystream(&mut buf);
+                        }
+                    }
                     Err(e)
                         if e.kind() == ErrorKind::WouldBlock
                             || e.kind() == ErrorKind::TimedOut =>
@@ -708,6 +734,24 @@ fn spawn_master_control_thread(
                     info!("chain detection probe from downstream proxy");
                     if let Err(e) = stream.write_all(&[CMD_CHAIN_DETECT, 0x00, 0x00, 0x00, 0x00]) {
                         warn!("failed to send chain detect ack: {e}");
+                    }
+                    if let Some(key) = encryption_key {
+                        info!("performing encrypted handshake");
+                        match encryption::server_nonce_exchange(&mut stream, key) {
+                            Ok((my_nonce, peer_nonce)) => {
+                                *encryption_nonces.lock().unwrap() = Some((my_nonce, peer_nonce));
+                                read_cipher = Some(chacha20::ChaCha20::new(
+                                    chacha20::Key::from_slice(&key),
+                                    chacha20::Nonce::from_slice(&peer_nonce),
+                                ));
+                                write_cipher = Some(chacha20::ChaCha20::new(
+                                    chacha20::Key::from_slice(&key),
+                                    chacha20::Nonce::from_slice(&my_nonce),
+                                ));
+                                info!("encrypted chain established");
+                            }
+                            Err(e) => warn!("encrypted handshake failed: {e}"),
+                        }
                     }
                 }
                 _ => {

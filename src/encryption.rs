@@ -73,6 +73,21 @@ pub fn nonce_exchange(
     Ok((my_nonce, peer_nonce))
 }
 
+/// Perform a nonce exchange from the server side
+///
+/// The server reads the proxy's nonce first, then sends its own.
+/// This is the receive-then-send counterpart to `nonce_exchange`.
+pub fn server_nonce_exchange(
+    stream: &mut (impl Read + Write),
+    _key: [u8; 32],
+) -> std::io::Result<([u8; 12], [u8; 12])> {
+    let mut peer_nonce = [0u8; 12];
+    stream.read_exact(&mut peer_nonce)?;
+    let my_nonce = generate_nonce();
+    stream.write_all(&my_nonce)?;
+    Ok((my_nonce, peer_nonce))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
