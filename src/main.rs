@@ -212,13 +212,38 @@ impl RateLimiter {
     long_about = None
 )]
 struct Args {
+    /// operating mode: "serve" (default) or "proxy"
+    #[clap(long, default_value = "serve",
+           value_parser = clap::builder::PossibleValuesParser::new(&["serve", "proxy"]))]
+    mode: String,
+
     /// listen address
     #[clap(short, long, default_value = "127.0.0.1")]
     address: String,
 
-    /// listen port
-    #[clap(short, long, default_value_t = 1234)]
-    port: u16,
+    /// master port — accepts the driver connection (alias for --port)
+    #[clap(short = 'p', long = "master-port", alias = "port", default_value_t = 1234)]
+    master_port: u16,
+
+    /// slave port — accepts read-only consumer connections
+    #[clap(long)]
+    slave_port: Option<u16>,
+
+    /// maximum number of connected slaves
+    #[clap(long, default_value_t = 10)]
+    max_slaves: usize,
+
+    /// upstream rtltcp server (host:port) for proxy mode
+    #[clap(long)]
+    upstream: Option<String>,
+
+    /// hex-encoded 32-byte encryption key
+    #[clap(long, conflicts_with = "key_file")]
+    key: Option<String>,
+
+    /// path to 32-byte raw encryption key file
+    #[clap(long, conflicts_with = "key")]
+    key_file: Option<String>,
 
     /// device index
     #[clap(short, long, default_value_t = 0)]
@@ -240,7 +265,7 @@ struct Args {
     #[clap(long, default_value_t = 30)]
     write_timeout: u64,
 
-    /// IP whitelist (CIDR notation), e.g. 192.168.100.0/24 (can be specified multiple times)
+    /// IP whitelist (CIDR notation)
     #[clap(long)]
     whitelist: Vec<String>,
 }
@@ -295,13 +320,13 @@ fn main() -> StdResult<(), RtlTcpError> {
         })? {
             listener
         } else {
-            TcpListener::bind(format!("{}:{}", args.address, args.port))?
+            TcpListener::bind(format!("{}:{}", args.address, args.master_port))?
         };
         systemd::daemon::notify(false, [(systemd::daemon::STATE_READY, "1")].iter())?;
     }
     #[cfg(not(feature = "systemd"))]
     {
-        listener = TcpListener::bind(format!("{}:{}", args.address, args.port))?;
+        listener = TcpListener::bind(format!("{}:{}", args.address, args.master_port))?;
     }
 
     let (sender, receiver) = sync_channel(1);

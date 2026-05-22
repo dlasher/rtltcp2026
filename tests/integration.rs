@@ -63,7 +63,7 @@ fn help_shows_all_options() {
         "-a",
         "--address",
         "-p",
-        "--port",
+        "--master-port",
         "-d",
         "--device-index",
         "-b",
@@ -91,6 +91,42 @@ fn short_flags_work() {
         .output()
         .expect("failed to execute binary");
 
+    assert!(output.status.success());
+}
+
+#[test]
+fn help_shows_new_proxy_options() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
+        .arg("--help")
+        .output()
+        .expect("failed to execute binary");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(stdout.contains("--mode"), "Missing --mode flag");
+    assert!(stdout.contains("--master-port"), "Missing --master-port flag");
+    assert!(stdout.contains("--slave-port"), "Missing --slave-port flag");
+    assert!(stdout.contains("--max-slaves"), "Missing --max-slaves flag");
+    assert!(stdout.contains("--upstream"), "Missing --upstream flag");
+    assert!(stdout.contains("--key"), "Missing --key flag");
+    assert!(stdout.contains("--key-file"), "Missing --key-file flag");
+}
+
+#[test]
+fn old_port_flag_still_works() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
+        .args(["--port", "9999", "--help"])
+        .output()
+        .expect("failed to execute binary");
+    assert!(output.status.success());
+}
+
+#[test]
+fn mode_proxy_help_succeeds() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
+        .args(["--mode", "proxy", "--upstream", "127.0.0.1:9998", "--help"])
+        .output()
+        .expect("failed to execute binary");
     assert!(output.status.success());
 }
 
