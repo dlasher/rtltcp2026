@@ -17,6 +17,8 @@ use tokio::sync::broadcast;
 
 mod error;
 mod control;
+mod encryption;
+mod proxy;
 pub mod stream;
 use crate::control::*;
 use crate::error::RtlTcpError;
