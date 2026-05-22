@@ -479,62 +479,72 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
     let slave_listener = TcpListener::bind(format!("{}:{}", args.address, slave_port))?;
     info!("slave port listening on {slave_port}");
 
-    // Accept master
-    info!("waiting for master connection on port {}…", args.master_port);
-    let (master_stream, addr) = master_listener.accept()?;
-    let client_ip = addr.ip().to_canonical().to_string();
-    check_whitelist(&client_ip, &args.whitelist)
-        .map_err(|e| { warn!("Connection from {client_ip} refused"); e })?;
-    info!("master connected from {addr}");
-    master_stream.set_read_timeout(Some(read_timeout))?;
-    master_stream.set_write_timeout(Some(Duration::from_secs(args.write_timeout)))?;
-
-    all_streams.lock().unwrap().push(master_stream.try_clone()?);
-
-    // Send magic packet via dedicated write clone
-    let mut bufw = BufWriter::with_capacity(args.tcp_buffers, master_stream.try_clone()?);
-    bufw.write_all(magic_packet)?;
-    bufw.flush()?;
-
-    // Start master control thread
-    let unknown_count = Arc::new(Mutex::new(0u64));
-    let thread_ctl = spawn_master_control_thread(
-        master_stream.try_clone()?, ctl.clone(), agc_state.clone(),
-        unknown_count, should_exit.clone(), read_timeout,
-    );
-
-    // Subscribe master to broadcast for IQ data
-    {
-        let mrx = tx.subscribe();
-        let mexit = should_exit.clone();
-        let mstream = master_stream.try_clone()?;
-        thread::spawn(move || stream::write_client_loop(mstream, mrx, &mexit));
-    }
-
-    // Start slave acceptor thread
+    // Start slave acceptor thread (runs for the life of the process)
     spawn_slave_acceptor(
         slave_listener, tx.clone(), magic_packet.to_vec(),
         args.whitelist.clone(), args.max_slaves, args.tcp_buffers,
         should_exit.clone(), all_streams.clone(),
     );
 
-    // Cancel thread
+    // Cancel thread (listens for shutdown signal)
     let thread_cancel = spawn_cancel_thread(ctl.clone(), receiver, should_exit.clone());
 
-    // USB read callback → broadcast
+    // USB read callback → broadcast (on its own thread so master accept can loop)
     let btx = tx.clone();
     let s = sender.clone();
-    let _ = reader.read_async(args.buffers, 0, move |bytes| {
-        if btx.send(bytes.to_vec()).is_err() {
-            let _ = s.try_send(());
-        }
+    let read_thread = thread::spawn(move || {
+        let _ = reader.read_async(args.buffers, 0, move |bytes| {
+            if btx.send(bytes.to_vec()).is_err() {
+                let _ = s.try_send(());
+            }
+        });
     });
 
+    // Master reconnection loop
+    loop {
+        info!("waiting for master connection on port {}…", args.master_port);
+        let (master_stream, addr) = master_listener.accept()?;
+        let client_ip = addr.ip().to_canonical().to_string();
+        check_whitelist(&client_ip, &args.whitelist)
+            .map_err(|e| { warn!("Connection from {client_ip} refused"); e })?;
+        info!("master connected from {addr}");
+        master_stream.set_read_timeout(Some(read_timeout))?;
+        master_stream.set_write_timeout(Some(Duration::from_secs(args.write_timeout)))?;
+
+        all_streams.lock().unwrap().push(master_stream.try_clone()?);
+
+        // Subscribe master to broadcast for IQ data
+        {
+            let mrx = tx.subscribe();
+            let mexit = should_exit.clone();
+            let mstream = master_stream.try_clone()?;
+            thread::spawn(move || stream::write_client_loop(mstream, mrx, &mexit));
+        }
+
+        // Send magic packet
+        let mut bufw = BufWriter::with_capacity(args.tcp_buffers, master_stream.try_clone()?);
+        bufw.write_all(magic_packet)?;
+        bufw.flush()?;
+
+        // Start master control thread
+        let unknown_count = Arc::new(Mutex::new(0u64));
+        let thread_ctl = spawn_master_control_thread(
+            master_stream.try_clone()?, ctl.clone(), agc_state.clone(),
+            unknown_count, should_exit.clone(), read_timeout,
+        );
+
+        // Wait for control thread (exits on master disconnect)
+        let _ = thread_ctl.join();
+        info!("master disconnected, ready for reconnection");
+
+        if should_exit.load(Ordering::SeqCst) { break; }
+    }
+
+    // Full shutdown
     let _ = sender.try_send(());
     let _ = thread_cancel.join();
-    let _ = thread_ctl.join();
+    let _ = read_thread.join();
 
-    // Close all slave streams for graceful shutdown
     {
         let streams = all_streams.lock().unwrap();
         for s in streams.iter() { let _ = s.shutdown(Shutdown::Both); }
@@ -787,21 +797,14 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
     let master_listener = bind_master_port(&args)?;
     let slave_listener = args.slave_port.map(|sp| TcpListener::bind(format!("{}:{}", args.address, sp))).transpose()?;
 
-    info!("waiting for master connection on port {}…", args.master_port);
-    let (mut master_stream, addr) = master_listener.accept()?;
-    let client_ip = addr.ip().to_canonical().to_string();
-    check_whitelist(&client_ip, &args.whitelist)
-        .map_err(|e| { warn!("Connection from {client_ip} refused"); e })?;
-    info!("master connected from {addr}");
-    master_stream.set_read_timeout(Some(read_timeout))?;
-    master_stream.set_write_timeout(Some(Duration::from_secs(args.write_timeout)))?;
-
     let (upstream_host, upstream_port_str) = upstream.rsplit_once(':')
         .ok_or_else(|| RtlTcpError::Config(format!("invalid upstream: {upstream}")))?;
     let upstream_port: u16 = upstream_port_str.parse()
         .map_err(|_| RtlTcpError::Config(format!("invalid upstream port: {upstream_port_str}")))?;
 
     let encryption_key = parse_encryption_key(&args)?;
+
+    // Connect upstream once — survives master reconnections
     let upstream_conn = proxy::connect_upstream(
         upstream_host, upstream_port, encryption_key, Duration::from_millis(500)
     )?;
@@ -809,15 +812,10 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
     let magic_packet = upstream_conn.magic_packet;
     info!("connected to upstream, chain mode: {is_chain}");
 
-    // Clone the upstream stream for independent ownership in two threads
     let mut upstream_reader_stream = upstream_conn.stream.try_clone()?;
-    let mut upstream_ctl_stream = upstream_conn.stream;
+    let upstream_ctl_stream = Arc::new(Mutex::new(upstream_conn.stream));
 
     let (tx, _rx) = stream::new_broadcast(stream::DEFAULT_BROADCAST_CAPACITY);
-
-    // Send cached magic packet to local master
-    let mut bufw = BufWriter::with_capacity(args.tcp_buffers, master_stream.try_clone()?);
-    bufw.write_all(&magic_packet)?; bufw.flush()?;
 
     // Start upstream reader thread → broadcast
     let utx = tx.clone(); let uexit = should_exit.clone(); let usender = sender.clone();
@@ -828,45 +826,78 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
             match upstream_reader_stream.read(&mut buf) {
                 Ok(0) => { info!("upstream closed"); break; }
                 Ok(n) => { let _ = utx.send(buf[..n].to_vec()); }
-                Err(ref e) if e.kind() == ErrorKind::TimedOut => continue,
+                Err(ref e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => continue,
                 Err(e) => { warn!("upstream read error: {e}"); let _ = usender.try_send(()); break; }
             }
         }
     });
 
-    // Master control thread: forward commands upstream
-    let cexit = should_exit.clone();
-    let thread_ctl = thread::spawn(move || {
-        let mut buf = [0u8; control::COMMAND_HEADER_SIZE];
-        let mut rl = control::RateLimiter::new(control::COMMAND_RATE_LIMIT_INTERVAL);
-        loop {
-            match master_stream.read_exact(&mut buf) {
-                Ok(()) => {}
-                Err(ref e) if is_disconnect_err(e) => { info!("master disconnected"); break; }
-                Err(e) => { warn!("master read error: {e}"); break; }
-            }
-            if cexit.load(Ordering::SeqCst) { break; }
-            if !rl.check() { continue; }
-            if let Err(e) = upstream_ctl_stream.write_all(&buf) {
-                warn!("failed to forward command: {e}"); break;
-            }
-        }
-    });
-
-    // Slave acceptor
+    // Slave acceptor (runs for the life of the process)
     if let Some(sl) = slave_listener {
         spawn_slave_acceptor(
-            sl, tx, magic_packet.to_vec(),
-            args.whitelist, args.max_slaves, args.tcp_buffers,
+            sl, tx.clone(), magic_packet.to_vec(),
+            args.whitelist.clone(), args.max_slaves, args.tcp_buffers,
             should_exit.clone(), Arc::new(Mutex::new(Vec::new())),
         );
     }
 
-    // Wait for shutdown
-    let _ = receiver.recv();
+    // Master reconnection loop
+    loop {
+        info!("waiting for master connection on port {}…", args.master_port);
+        let (mut master_stream, addr) = master_listener.accept()?;
+        let client_ip = addr.ip().to_canonical().to_string();
+        check_whitelist(&client_ip, &args.whitelist)
+            .map_err(|e| { warn!("Connection from {client_ip} refused"); e })?;
+        info!("master connected from {addr}");
+        master_stream.set_read_timeout(Some(read_timeout))?;
+        master_stream.set_write_timeout(Some(Duration::from_secs(args.write_timeout)))?;
+
+        // Send cached magic packet to local master
+        let mut bufw = BufWriter::with_capacity(args.tcp_buffers, master_stream.try_clone()?);
+        bufw.write_all(&magic_packet)?; bufw.flush()?;
+
+        // Subscribe master to broadcast for IQ data
+        {
+            let mrx = tx.subscribe();
+            let mexit = should_exit.clone();
+            let mstream = master_stream.try_clone()?;
+            thread::spawn(move || stream::write_client_loop(mstream, mrx, &mexit));
+        }
+
+        // Master control thread: forward commands upstream
+        let cexit = should_exit.clone();
+        let ustream = upstream_ctl_stream.clone();
+        let thread_ctl = thread::spawn(move || {
+            let mut buf = [0u8; control::COMMAND_HEADER_SIZE];
+            let mut rl = control::RateLimiter::new(control::COMMAND_RATE_LIMIT_INTERVAL);
+            loop {
+                match master_stream.read_exact(&mut buf) {
+                    Ok(()) => {}
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => continue,
+                    Err(ref e) if is_disconnect_err(e) => { info!("master disconnected"); break; }
+                    Err(e) => { warn!("master read error: {e}"); break; }
+                }
+                if cexit.load(Ordering::SeqCst) { break; }
+                if !rl.check() { continue; }
+                if let Ok(mut guard) = ustream.lock() {
+                    if let Err(e) = guard.write_all(&buf) {
+                        warn!("failed to forward command: {e}"); break;
+                    }
+                } else { break; }
+            }
+        });
+
+        // Wait for control thread (exits on master disconnect)
+        let _ = thread_ctl.join();
+        info!("master disconnected, ready for reconnection");
+
+        if should_exit.load(Ordering::SeqCst) { break; }
+    }
+
+    // Full shutdown
     should_exit.store(true, Ordering::SeqCst);
+    let _ = sender.try_send(());
     let _ = thread_upstream.join();
-    let _ = thread_ctl.join();
     info!("proxy mode shut down");
     Ok(())
 }
