@@ -1,4 +1,16 @@
 # Changelog
+## [0.9.1] - 2026-05-22
+
+### Fixed
+- **Master now receives IQ data**: Subscribed master to broadcast channel in multi-client serve mode. Previously master got magic packet but no IQ data — only slaves were wired.
+- **Control thread no longer dies on idle timeout**: `WouldBlock` and `TimedOut` now `continue` instead of `break`. Linux `SO_RCVTIMEO` fires as `EAGAIN`/`WouldBlock` after `read-timeout` seconds; previously killed the control thread, making the server unrecoverable.
+- **Master reconnection**: Both serve and proxy modes now loop back to `accept()` after master disconnect. `read_async` runs on its own thread so it doesn't block re-accept. Previously a single accept+control thread meant master reconnect was impossible without restart.
+- **Proxy upstream stream thread safety**: Wrapped upstream control stream in `Arc<Mutex<>>` to survive master reconnection loop.
+- **Master-port/slave-port conflict**: `validate_args` rejects identical ports with a clear error instead of cryptic `AddrInUse`.
+
+### Added
+- Integration test: `test_master_slave_same_port_rejected` — verifies port conflict validation.
+
 ## [0.9.0] - 2026-05-22
 
 ### Added
