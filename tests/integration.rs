@@ -139,6 +139,17 @@ fn test_serve_mode_help() {
     assert!(output.status.success());
 }
 
+#[test]
+fn test_master_slave_same_port_rejected() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
+        .args(["--mode", "serve", "--master-port", "1234", "--slave-port", "1234"])
+        .output()
+        .expect("failed to execute binary");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("slave-port must differ from master-port"));
+}
+
 // ============================================================================
 // Protocol Command Parsing Tests
 // ============================================================================

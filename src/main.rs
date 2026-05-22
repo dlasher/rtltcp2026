@@ -129,6 +129,13 @@ fn validate_args(args: &Args) -> StdResult<(), RtlTcpError> {
             "write_timeout must be greater than 0".to_string(),
         ));
     }
+    if let Some(sp) = args.slave_port {
+        if sp == args.master_port {
+            return Err(RtlTcpError::Config(
+                "slave-port must differ from master-port".to_string(),
+            ));
+        }
+    }
     Ok(())
 }
 
