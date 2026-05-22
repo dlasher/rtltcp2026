@@ -17,6 +17,7 @@ use tracing::{debug, info, warn};
 
 mod error;
 mod control;
+pub mod stream;
 use crate::control::*;
 use crate::error::RtlTcpError;
 
