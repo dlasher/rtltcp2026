@@ -95,9 +95,7 @@ fn main() -> StdResult<(), RtlTcpError> {
     validate_args(&args)?;
 
     match args.mode.as_str() {
-        "proxy" => {
-            Err(RtlTcpError::Config("proxy mode not yet implemented".to_string()))
-        }
+        "proxy" => run_proxy_multi(args),
         "serve" => {
             if args.slave_port.is_some() {
                 run_serve_multi(args)
@@ -745,4 +743,124 @@ fn spawn_cancel_thread(
         }
         should_exit.store(true, Ordering::SeqCst);
     })
+}
+
+/// Proxy mode: connect upstream, accept local master+slaves, fan-out
+fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
+    let upstream = args.upstream.as_ref()
+        .ok_or_else(|| RtlTcpError::Config("--upstream required in proxy mode".to_string()))?;
+    let read_timeout = Duration::from_secs(args.read_timeout);
+
+    let should_exit = Arc::new(AtomicBool::new(false));
+    let (sender, receiver) = sync_channel(1);
+
+    ctrlc::set_handler({
+        let s = sender.clone(); let e = should_exit.clone();
+        move || { info!("received signal"); let _ = s.try_send(()); e.store(true, Ordering::SeqCst); }
+    }).map_err(|e| RtlTcpError::Config(format!("could not set signal handler: {e}")))?;
+
+    let master_listener = bind_master_port(&args)?;
+    let slave_listener = args.slave_port.map(|sp| TcpListener::bind(format!("{}:{}", args.address, sp))).transpose()?;
+
+    info!("waiting for master connection on port {}…", args.master_port);
+    let (mut master_stream, addr) = master_listener.accept()?;
+    let client_ip = addr.ip().to_canonical().to_string();
+    check_whitelist(&client_ip, &args.whitelist)
+        .map_err(|e| { warn!("Connection from {client_ip} refused"); e })?;
+    info!("master connected from {addr}");
+    master_stream.set_read_timeout(Some(read_timeout))?;
+    master_stream.set_write_timeout(Some(Duration::from_secs(args.write_timeout)))?;
+
+    let (upstream_host, upstream_port_str) = upstream.rsplit_once(':')
+        .ok_or_else(|| RtlTcpError::Config(format!("invalid upstream: {upstream}")))?;
+    let upstream_port: u16 = upstream_port_str.parse()
+        .map_err(|_| RtlTcpError::Config(format!("invalid upstream port: {upstream_port_str}")))?;
+
+    let encryption_key = parse_encryption_key(&args)?;
+    let upstream_conn = proxy::connect_upstream(
+        upstream_host, upstream_port, encryption_key, Duration::from_millis(500)
+    )?;
+    let is_chain = upstream_conn.is_chain;
+    let magic_packet = upstream_conn.magic_packet;
+    info!("connected to upstream, chain mode: {is_chain}");
+
+    // Clone the upstream stream for independent ownership in two threads
+    let mut upstream_reader_stream = upstream_conn.stream.try_clone()?;
+    let mut upstream_ctl_stream = upstream_conn.stream;
+
+    let (tx, _rx) = stream::new_broadcast(stream::DEFAULT_BROADCAST_CAPACITY);
+
+    // Send cached magic packet to local master
+    let mut bufw = BufWriter::with_capacity(args.tcp_buffers, master_stream.try_clone()?);
+    bufw.write_all(&magic_packet)?; bufw.flush()?;
+
+    // Start upstream reader thread → broadcast
+    let utx = tx.clone(); let uexit = should_exit.clone(); let usender = sender.clone();
+    let thread_upstream = thread::spawn(move || {
+        let mut buf = vec![0u8; 512 * 1024];
+        loop {
+            if uexit.load(Ordering::SeqCst) { break; }
+            match upstream_reader_stream.read(&mut buf) {
+                Ok(0) => { info!("upstream closed"); break; }
+                Ok(n) => { let _ = utx.send(buf[..n].to_vec()); }
+                Err(ref e) if e.kind() == ErrorKind::TimedOut => continue,
+                Err(e) => { warn!("upstream read error: {e}"); let _ = usender.try_send(()); break; }
+            }
+        }
+    });
+
+    // Master control thread: forward commands upstream
+    let cexit = should_exit.clone();
+    let thread_ctl = thread::spawn(move || {
+        let mut buf = [0u8; control::COMMAND_HEADER_SIZE];
+        let mut rl = control::RateLimiter::new(control::COMMAND_RATE_LIMIT_INTERVAL);
+        loop {
+            match master_stream.read_exact(&mut buf) {
+                Ok(()) => {}
+                Err(ref e) if is_disconnect_err(e) => { info!("master disconnected"); break; }
+                Err(e) => { warn!("master read error: {e}"); break; }
+            }
+            if cexit.load(Ordering::SeqCst) { break; }
+            if !rl.check() { continue; }
+            if let Err(e) = upstream_ctl_stream.write_all(&buf) {
+                warn!("failed to forward command: {e}"); break;
+            }
+        }
+    });
+
+    // Slave acceptor
+    if let Some(sl) = slave_listener {
+        spawn_slave_acceptor(
+            sl, tx, magic_packet.to_vec(),
+            args.whitelist, args.max_slaves, args.tcp_buffers,
+            should_exit.clone(), Arc::new(Mutex::new(Vec::new())),
+        );
+    }
+
+    // Wait for shutdown
+    let _ = receiver.recv();
+    should_exit.store(true, Ordering::SeqCst);
+    let _ = thread_upstream.join();
+    let _ = thread_ctl.join();
+    info!("proxy mode shut down");
+    Ok(())
+}
+
+fn is_disconnect_err(e: &std::io::Error) -> bool {
+    matches!(e.kind(), ErrorKind::UnexpectedEof | ErrorKind::ConnectionReset
+        | ErrorKind::BrokenPipe | ErrorKind::ConnectionAborted | ErrorKind::NotConnected)
+}
+
+fn parse_encryption_key(args: &Args) -> Result<Option<[u8; 32]>, RtlTcpError> {
+    if let Some(ref hex_key) = args.key {
+        let bytes = hex::decode(hex_key)
+            .map_err(|e| RtlTcpError::Config(format!("invalid hex key: {e}")))?;
+        if bytes.len() != 32 { return Err(RtlTcpError::Config("key must be 32 bytes".into())); }
+        let mut k = [0u8; 32]; k.copy_from_slice(&bytes); Ok(Some(k))
+    } else if let Some(ref path) = args.key_file {
+        let bytes = std::fs::read(path)
+            .map_err(|e| RtlTcpError::Config(format!("failed to read key file {path}: {e}")))?;
+        if bytes.len() != 32 { return Err(RtlTcpError::Config("key must be 32 bytes".into())); }
+        let mut k = [0u8; 32]; k.copy_from_slice(&bytes); Ok(Some(k))
+    } else { Ok(None) }
 }
