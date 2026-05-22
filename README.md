@@ -8,6 +8,12 @@ Fork of [niclashoyer/rtltcp](https://github.com/niclashoyer/rtltcp) with stabili
 
 ## Key Enhancements over Original
 
+### Multi-Client Proxy Architecture (v0.9.0+)
+- **Serve mode** with a driver (master) connection and up to 10 read-only consumer (slave) connections. One USB device, many clients.
+- **Proxy mode** chains multiple rtltcp servers together, relaying IQ data across the network. Upstream chain detection uses a 0xF0 protocol probe.
+- **Optional ChaCha20 encryption** between chained proxies secures IQ data in transit.
+- **tokio::sync::broadcast** fan-out delivers identical IQ data to every connected client from a single USB read loop.
+
 ### Security Hardening
 - Server enforces 30s read/write timeouts and 50ms command rate limiting to prevent connection exhaustion and flooding attacks.
 - Protocol commands are bounds-checked before reaching hardware.
@@ -20,10 +26,13 @@ Fork of [niclashoyer/rtltcp](https://github.com/niclashoyer/rtltcp) with stabili
 - Signal handling cleans up device resources and threads on shutdown.
 
 ### Tooling & Quality
-- 150+ test cases cover edge cases and protocol parsing.
+- 170+ test cases cover edge cases, protocol parsing, broadcast fan-out, chain detection, encryption round-trips, and graceful shutdown.
 - Dependencies use semver-compatible ranges with `Cargo.lock` for reproducible builds.
 
 ## Features
+- **Multi-client serve**: One USB device, one master client drives commands, up to 10 slave clients receive IQ data.
+- **Proxy chaining**: Chain rtltcp servers together. Supports optional ChaCha20 encryption between links.
+- **Chain detection**: Downstream proxies automatically detect upstream proxy support via 0xF0 protocol probe with 500ms timeout.
 - Custom error type prevents crashes on client disconnect or device errors.
 - Signal handler shuts down device resources and threads cleanly.
 - Client IP logging, DoS protection, input validation.
@@ -40,6 +49,8 @@ Fork of [niclashoyer/rtltcp](https://github.com/niclashoyer/rtltcp) with stabili
 - All command payloads validated against hardware-safe ranges.
 - Client IP logged on connection for security auditing.
 - Server warns when binding to `0.0.0.0` or `::`.
+- **Multi-client**: Master connection drives hardware commands; slave connections are write-only (no hardware access).
+- **Proxy**: Upstream connection can optionally use ChaCha20 encryption with 32-byte key exchange.
 
 ### System Security
 - systemd service files restrict process capabilities, namespaces, and syscalls.
@@ -78,7 +89,7 @@ Requirements:
 git clone https://github.com/dlasher/rtltcp2026.git
 cd rtltcp2026
 cargo build --release
-sudo cp target/release/rtltcp /usr/local/bin/
+sudo cp target/release/rtltcp2026 /usr/local/bin/
 ```
 
 ### Building for ARM (aarch64)
@@ -92,7 +103,7 @@ source ~/.cargo/env
 git clone https://github.com/dlasher/rtltcp2026.git
 cd rtltcp2026
 cargo build --release
-sudo cp target/release/rtltcp /usr/local/bin/
+sudo cp target/release/rtltcp2026 /usr/local/bin/
 ```
 
 Builds natively on the target device. No cross-compilation toolchain needed.
@@ -102,75 +113,156 @@ Builds natively on the target device. No cross-compilation toolchain needed.
 ### Command Line Options
 
 ```
-rtltcp 0.7.4
+rtltcp2026
+
 an I/Q spectrum server for RTL2832 based DVB-T receivers
 
-USAGE:
-    rtltcp [OPTIONS]
+Usage: rtltcp2026 [OPTIONS]
 
-OPTIONS:
-    -a, --address <ADDRESS>       listen address [default: 127.0.0.1]
-    -p, --port <PORT>             listen port [default: 1234]
-    -d, --device-index <INDEX>    device index [default: 0]
-    -b, --buffers <COUNT>         number of decoding buffers [default: 15, range: 1-32]
-    -s, --tcp-buffers <SIZE>      tcp sending buffer size (bytes) [default: 512000, range: 1-10485760]
-    --read-timeout <SECONDS>      socket read timeout [default: 30]
-    --write-timeout <SECONDS>     socket write timeout [default: 30]
-    -h, --help                    print help
-    -V, --version                 print version
+Options:
+      --mode <MODE>                    operating mode: "serve" (default) or "proxy"
+                                       [default: serve] [possible values: serve, proxy]
+  -a, --address <ADDRESS>              listen address [default: 127.0.0.1]
+  -p, --master-port <MASTER_PORT>      master port — accepts the driver connection
+                                       (alias for --port) [default: 1234]
+      --slave-port <SLAVE_PORT>        slave port — accepts read-only consumer connections
+      --max-slaves <MAX_SLAVES>        maximum number of connected slaves [default: 10]
+      --upstream <UPSTREAM>            upstream rtltcp server (host:port) for proxy mode
+      --key <KEY>                      hex-encoded 32-byte encryption key
+      --key-file <KEY_FILE>            path to 32-byte raw encryption key file
+  -d, --device-index <DEVICE_INDEX>    device index [default: 0]
+  -b, --buffers <BUFFERS>              number of decoding buffers [default: 15]
+  -s, --tcp-buffers <TCP_BUFFERS>      tcp sending buffer size (bytes)
+                                       [default: 512000, range: 1-10485760]
+      --read-timeout <READ_TIMEOUT>    socket read timeout in seconds [default: 30]
+      --write-timeout <WRITE_TIMEOUT>  socket write timeout in seconds [default: 30]
+      --whitelist <WHITELIST>          IP whitelist (CIDR notation)
+  -h, --help                           Print help
+  -V, --version                        Print version
 ```
 
-### Usage Examples for All CLI Flags
+### Modes
 
-#### Basic usage with defaults
-Runs on localhost:1234 with device 0:
+**serve** (default) — Attach to a local RTL-SDR device. Accept one master client that drives commands and up to 10 slave clients that receive IQ data read-only.
+
+**proxy** — Connect to an upstream rtltcp server and relay IQ data to local clients. Optionally encrypt the upstream link with ChaCha20.
+
+### Usage Examples
+
+#### Basic usage (single client, backward compatible)
+
 ```bash
-rtltcp
+rtltcp2026                          # localhost:1234, device 0
+rtltcp2026 -p 8000                  # custom port
+rtltcp2026 --address 0.0.0.0        # all interfaces
 ```
 
-#### Custom listen address and port
+#### Multi-client serve: one USB, many consumers
+
+Start the server with a slave port:
+
 ```bash
-rtltcp --address 192.168.1.100 --port 8000
-rtltcp -a 192.168.1.100 -p 8000
+rtltcp2026 \
+  --mode serve \
+  --master-port 1234 \
+  --slave-port 1235
 ```
 
-#### Bind to all interfaces (use with caution)
+Connect the master (drives hardware — frequency, gain, etc.):
+
 ```bash
-rtltcp --address 0.0.0.0 --port 1234
+# gqrx, rtl_433, or custom client on port 1234
 ```
 
-#### Custom device index
+Connect one or more read-only slaves:
+
 ```bash
-rtltcp --device-index 1
-rtltcp -d 1
+# Additional clients on port 1235 — all receive identical IQ data
+# rtl_433 --direct ... or another rtltcp-compatible client
 ```
 
-#### Custom buffer settings
-Increase USB transfer buffers for smoother streaming on high-bandwidth connections:
+Master commands set frequency and gain; slaves just consume IQ data. Slaves cannot send commands to the hardware.
+
+#### Proxy chain
+
+Connect two rtltcp servers, where the downstream serves multiple clients from upstream IQ:
+
 ```bash
-rtltcp --buffers 20
-rtltcp -b 20
+# Upstream: local SDR on port 9991
+rtltcp2026 --mode serve --master-port 9991
+
+# Downstream proxy: relays upstream IQ to local clients
+rtltcp2026 \
+  --mode proxy \
+  --master-port 1234 \
+  --slave-port 1235 \
+  --upstream 127.0.0.1:9991
 ```
 
-`--tcp-buffers` / `-s` controls the userspace buffer size for outgoing TCP writes. Each USB transfer buffer flushes immediately. Values above 512KB can cause clients like rtl_433 to time out waiting for data. Only increase this for clients that buffer incoming data.
+Connect the downstream master to proxy (relays commands upstream):
+
+```bash
+# This client's frequency/gain/etc commands are forwarded to the upstream SDR
+rtltcp2026 --port 1234   # connects to the proxy as master
+# Or any rtl-tcp compatible client
+```
+
+Connect read-only slaves to the proxy:
+
+```bash
+# These clients receive IQ data relayed from upstream via the proxy
+# Multiple slaves on port 1235 get identical IQ data
+```
+
+#### Encrypted proxy chain
+
+Secure IQ data between proxies with ChaCha20:
+
+```bash
+# Generate a 32-byte key
+head -c 32 /dev/urandom > /etc/rtltcp/proxy.key
+
+# Upstream SDR server
+rtltcp2026 --mode serve --master-port 9991
+
+# Downstream proxy with encryption
+rtltcp2026 \
+  --mode proxy \
+  --master-port 1234 \
+  --slave-port 1235 \
+  --upstream 127.0.0.1:9991 \
+  --key-file /etc/rtltcp/proxy.key
+```
+
+Or provide the key as a hex string: `--key <64-hex-chars>`.
+
+#### Maximum slaves
+
+```bash
+rtltcp2026 \
+  --mode serve \
+  --master-port 1234 \
+  --slave-port 1235 \
+  --max-slaves 5
+```
+
+Limits concurrent slave connections. Default is 10.
 
 #### Custom timeout settings
+
 ```bash
-rtltcp --read-timeout 60 --write-timeout 60
-rtltcp --read-timeout 10 --write-timeout 10
+rtltcp2026 --read-timeout 60 --write-timeout 60
+rtltcp2026 --read-timeout 10 --write-timeout 10
 ```
 
-#### Multiple device setup
-```bash
-rtltcp --device-index 0 --port 1234 &
-rtltcp --device-index 1 --port 1235 &
-```
+#### Production-ready multi-client
 
-#### Production-ready with all options
 ```bash
-rtltcp \
+rtltcp2026 \
   --address 127.0.0.1 \
-  --port 1234 \
+  --master-port 1234 \
+  --slave-port 1235 \
+  --max-slaves 10 \
   --device-index 0 \
   --buffers 20 \
   --tcp-buffers 1024000 \
@@ -178,16 +270,25 @@ rtltcp \
   --write-timeout 60
 ```
 
+#### Multiple device setup (legacy single-client)
+
+```bash
+rtltcp2026 --device-index 0 --port 1234 &
+rtltcp2026 --device-index 1 --port 1235 &
+```
+
 ### Connect with an SDR Client
 
 ```bash
-# Using gqrx, SDR#, or any rtl-tcp compatible client
-# Connect to your server's IP on port 1234
+# Using gqrx, SDR#, rtl_433, or any rtl-tcp compatible client
+# Connect to your server's IP on port 1234 (master) or port 1235 (slave)
 ```
 
 ### Using Systemd Socket Activation
 
 systemd socket activation starts rtltcp only when a client connects. The RTL-SDR dongle stays cool when idle.
+
+Only the **master port** supports socket activation. Slave ports are auto-opened by the process.
 
 Create `/etc/systemd/system/rtltcp.service`:
 
@@ -200,7 +301,7 @@ ConditionPathExists=/dev/bus/usb/
 
 [Service]
 Type=notify
-ExecStart=/usr/local/bin/rtltcp
+ExecStart=/usr/local/bin/rtltcp2026 --mode serve --slave-port 1235
 TimeoutStopSec=5
 
 # Security hardening directives
@@ -259,7 +360,7 @@ ConditionPathExistsGlob=/dev/bus/usb/*/*
 
 [Service]
 Type=notify
-ExecStart=/usr/local/bin/rtltcp
+ExecStart=/usr/local/bin/rtltcp2026 --mode serve --slave-port 1235
 TimeoutStopSec=5
 
 # User/Group isolation
@@ -335,6 +436,9 @@ The rtl-tcp protocol uses a 5-byte command format: `[command_byte][4-byte big-en
 | Set Tuner Gain | 0x04 | Set manual gain | i32 (big-endian, dB*10) | 0 - 500 |
 | Set PPM | 0x05 | Set frequency correction | i32 (big-endian, ppm) | -200 - 200 |
 | Set AGC | 0x08 | Set automatic gain | u32 (big-endian) | 0 = off, 1 = on |
+| Chain Detect | 0xF0 | Probe for proxy chain support | magic "PROX" | (reserved) |
+
+The **Chain Detect** command (0xF0) is a reserved opcode not defined in the original rtl-tcp spec. It is used internally by proxy-mode servers to detect chain support: a downstream proxy sends `[0xF0, 0x50, 0x52, 0x4F, 0x58]` and expects `[0xF0, 0x00, 0x00, 0x00, 0x00]` back within 500ms. If no ACK arrives, the connection proceeds in plain TCP mode.
 
 ### Connection Protocol
 
@@ -343,7 +447,23 @@ On connect, the server sends a 12-byte magic packet:
 - Bytes 4-7: Tuner type (big-endian u32, typically 5 for R820T)
 - Bytes 8-11: Maximum gain value (big-endian u32, typically 0x1d)
 
+In multi-client serve and proxy modes, the magic packet is cached and sent to every connected client (master and slaves alike).
+
+### Encryption Handshake
+
+When `--key` or `--key-file` is provided in proxy mode, after chain detection the two peers perform a nonce exchange: each generates a random 12-byte nonce via ChaCha20's `rand::thread_rng`, sends it, and receives the peer's nonce. Subsequent IQ data is encrypted/decrypted using ChaCha20 with the shared key and exchanged nonces.
+
 ## Migration Guide
+
+### From v0.8.x to v0.9.0
+
+1. The binary name changed from `rtltcp` to `rtltcp2026` in v0.8.0. Update your service files and scripts.
+2. `--port` is now aliased to `--master-port`. The short flag `-p` still works. Help output shows `--master-port`.
+3. **New flags**: `--mode`, `--slave-port`, `--max-slaves`, `--upstream`, `--key`, `--key-file`.
+4. v0.8.x invocations work unchanged: `rtltcp2026` still runs single-client serve mode on port 1234.
+5. systemd socket activation only activates the master port. Add `--slave-port` to `ExecStart` for multi-client setups.
+6. ChaCha20 (`chacha20` crate), `tokio` (sync feature), `rand`, and `hex` are new dependencies.
+7. 170+ tests (up from 150+).
 
 ### From v0.3.x to v0.4.0 (and later)
 
