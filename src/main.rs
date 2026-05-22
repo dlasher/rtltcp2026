@@ -238,10 +238,15 @@ fn run_serve_single(args: Args) -> StdResult<(), RtlTcpError> {
                 match stream.read_exact(&mut buf) {
                     Ok(()) => {}
                     Err(e)
+                        if e.kind() == ErrorKind::WouldBlock
+                            || e.kind() == ErrorKind::TimedOut =>
+                    {
+                        continue;
+                    }
+                    Err(e)
                         if e.kind() == ErrorKind::UnexpectedEof
                             || e.kind() == ErrorKind::ConnectionReset
                             || e.kind() == ErrorKind::BrokenPipe
-                            || e.kind() == ErrorKind::TimedOut
                             || e.kind() == ErrorKind::ConnectionAborted
                             || e.kind() == ErrorKind::NotConnected =>
                     {
@@ -498,6 +503,14 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
         unknown_count, should_exit.clone(), read_timeout,
     );
 
+    // Subscribe master to broadcast for IQ data
+    {
+        let mrx = tx.subscribe();
+        let mexit = should_exit.clone();
+        let mstream = master_stream.try_clone()?;
+        thread::spawn(move || stream::write_client_loop(mstream, mrx, &mexit));
+    }
+
     // Start slave acceptor thread
     spawn_slave_acceptor(
         slave_listener, tx.clone(), magic_packet.to_vec(),
@@ -546,26 +559,31 @@ fn spawn_master_control_thread(
         let mut buf = [0u8; COMMAND_HEADER_SIZE];
         let mut rate_limiter = RateLimiter::new(COMMAND_RATE_LIMIT_INTERVAL);
         loop {
-            match stream.read_exact(&mut buf) {
-                Ok(()) => {}
-                Err(e)
-                    if e.kind() == ErrorKind::UnexpectedEof
-                        || e.kind() == ErrorKind::ConnectionReset
-                        || e.kind() == ErrorKind::BrokenPipe
-                        || e.kind() == ErrorKind::TimedOut
-                        || e.kind() == ErrorKind::ConnectionAborted
-                        || e.kind() == ErrorKind::NotConnected =>
-                {
-                    info!("client disconnected: {e}");
-                    break;
+                match stream.read_exact(&mut buf) {
+                    Ok(()) => {}
+                    Err(e)
+                        if e.kind() == ErrorKind::WouldBlock
+                            || e.kind() == ErrorKind::TimedOut =>
+                    {
+                        continue;
+                    }
+                    Err(e)
+                        if e.kind() == ErrorKind::UnexpectedEof
+                            || e.kind() == ErrorKind::ConnectionReset
+                            || e.kind() == ErrorKind::BrokenPipe
+                            || e.kind() == ErrorKind::ConnectionAborted
+                            || e.kind() == ErrorKind::NotConnected =>
+                    {
+                        info!("client disconnected: {e}");
+                        break;
+                    }
+                    Err(e) => {
+                        warn!("read error from client: {e}");
+                        break;
+                    }
                 }
-                Err(e) => {
-                    warn!("read error from client: {e}");
-                    break;
-                }
-            }
 
-            if should_exit.load(Ordering::SeqCst) {
+                if should_exit.load(Ordering::SeqCst) {
                 info!("exit flag set, stopping control thread");
                 break;
             }
