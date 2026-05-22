@@ -26,6 +26,7 @@ const CMD_SET_GAIN_MODE: u8 = 0x03;
 const CMD_SET_TUNER_GAIN: u8 = 0x04;
 const CMD_SET_PPM: u8 = 0x05;
 const CMD_SET_AGC: u8 = 0x08;
+const CMD_CHAIN_DETECT: u8 = 0xF0;
 
 /// Magic packet sent to client on connect:
 /// "RTL0" (4 bytes) + tuner type 5 (4 bytes BE) + max gain value 0x1d (4 bytes BE)
@@ -523,8 +524,14 @@ fn main() -> StdResult<(), RtlTcpError> {
                                 }
                             });
                         }
-                    }
-                    _ => {
+                     }
+                     CMD_CHAIN_DETECT => {
+                         info!("chain detection probe from downstream proxy");
+                         if let Err(e) = stream.write_all(&[CMD_CHAIN_DETECT, 0x00, 0x00, 0x00, 0x00]) {
+                             warn!("failed to send chain detect ack: {e}");
+                         }
+                     }
+                     _ => {
                         // Task 2.3: Changed from debug! to warn! and added counter
                         let mut count = unknown_command_count.lock().unwrap();
                         *count += 1;
@@ -911,5 +918,20 @@ mod tests {
         assert!(is_ip_in_whitelist("::ffff:10.4.10.1", &whitelist));
         assert!(!is_ip_in_whitelist("::ffff:10.4.11.1", &whitelist));
         assert!(!is_ip_in_whitelist("::ffff:192.168.1.1", &whitelist));
+    }
+
+    #[test]
+    fn test_chain_detect_ack_response() {
+        let buf: [u8; 5] = [0xF0, 0x50, 0x52, 0x4F, 0x58];
+        assert_eq!(buf[0], CMD_CHAIN_DETECT);
+        let magic = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+        assert_eq!(magic, 0x50524F58);
+    }
+
+    #[test]
+    fn test_chain_detect_ack_format() {
+        let ack: [u8; 5] = [0xF0, 0x00, 0x00, 0x00, 0x00];
+        assert_eq!(ack.len(), COMMAND_HEADER_SIZE);
+        assert_eq!(ack[0], CMD_CHAIN_DETECT);
     }
 }
