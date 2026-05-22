@@ -130,6 +130,15 @@ fn mode_proxy_help_succeeds() {
     assert!(output.status.success());
 }
 
+#[test]
+fn test_serve_mode_help() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
+        .args(["--mode", "serve", "--slave-port", "9995", "--help"])
+        .output()
+        .expect("failed to execute binary");
+    assert!(output.status.success());
+}
+
 // ============================================================================
 // Protocol Command Parsing Tests
 // ============================================================================
