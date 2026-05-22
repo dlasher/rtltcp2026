@@ -1,4 +1,25 @@
 # Changelog
+## [0.9.0] - 2026-05-22
+
+### Added
+- **Multi-client serve mode**: One USB device drives a master connection, up to 10 slave connections receive identical IQ data read-only via `tokio::sync::broadcast` fan-out
+- **Proxy mode**: Chain rtltcp servers together with `--mode proxy --upstream host:port` to relay IQ across the network
+- **Chain detection**: Downstream proxies probe upstream with reserved opcode `0xF0` (500ms timeout) to detect proxy protocol support
+- **ChaCha20 encryption**: Optional encryption between chained proxies via `--key <hex>` or `--key-file <path>` with automatic nonce exchange
+- **New CLI flags**: `--mode`, `--slave-port`, `--max-slaves`, `--upstream`, `--key`, `--key-file`
+- **New dependencies**: `tokio` (sync), `chacha20`, `rand`, `hex`
+- `hardware-tests` Cargo feature for real-device integration tests
+- 170+ test cases covering broadcast fan-out, chain detection, encryption round-trips, protocol commands, and graceful shutdown
+
+### Changed
+- `--port` aliased to `--master-port`. The `-p` short flag still works. Existing invocations unchanged
+- Control module extracted to `src/control.rs` (constants, validation, rate limiter, whitelist, AGC state)
+- Stream module created in `src/stream.rs` (broadcast channel + per-client writer loop)
+- Proxy module created in `src/proxy.rs` (upstream connection, chain detection)
+- Encryption module created in `src/encryption.rs` (EncryptedReader/Writer, nonce exchange)
+- Single-client mode preserved as `run_serve_single` with identical behavior
+- README fully updated with new CLI, usage examples, protocol docs, and migration guide
+
 ## [0.7.4] - 2026-05-14
 
 ### Fixed
