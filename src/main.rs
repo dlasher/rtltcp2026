@@ -503,10 +503,18 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
         });
     });
 
-    // Master reconnection loop
+    // Master reconnection loop (non-blocking accept so Ctrl-C can interrupt)
+    master_listener.set_nonblocking(true)?;
     loop {
-        info!("waiting for master connection on port {}…", args.master_port);
-        let (master_stream, addr) = master_listener.accept()?;
+        if should_exit.load(Ordering::SeqCst) { break; }
+        let (master_stream, addr) = match master_listener.accept() {
+            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+            Err(e) => return Err(RtlTcpError::Network(format!("master accept error: {e}"))),
+            Ok(conn) => conn,
+        };
         let client_ip = addr.ip().to_canonical().to_string();
         check_whitelist(&client_ip, &args.whitelist)
             .map_err(|e| { warn!("Connection from {client_ip} refused"); e })?;
@@ -885,10 +893,19 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
         );
     }
 
+    master_listener.set_nonblocking(true)?;
+
     // Master reconnection loop
     loop {
-        info!("waiting for master connection on port {}…", args.master_port);
-        let (mut master_stream, addr) = master_listener.accept()?;
+        if should_exit.load(Ordering::SeqCst) { break; }
+        let (mut master_stream, addr) = match master_listener.accept() {
+            Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+            Err(e) => return Err(RtlTcpError::Network(format!("master accept error: {e}"))),
+            Ok(conn) => conn,
+        };
         let client_ip = addr.ip().to_canonical().to_string();
         check_whitelist(&client_ip, &args.whitelist)
             .map_err(|e| { warn!("Connection from {client_ip} refused"); e })?;

@@ -1,4 +1,10 @@
 # Changelog
+## [0.9.2] - 2026-05-22
+
+### Fixed
+- **Ctrl-C now cleanly shuts down the server**: Master listener set to non-blocking mode with a poll loop. Previously `accept()` blocked indefinitely, preventing the shutdown signal from being checked.
+- **Non-blocking shutdown in proxy mode**: Same fix applied to `run_proxy_multi`.
+
 ## [0.9.1] - 2026-05-22
 
 ### Fixed
