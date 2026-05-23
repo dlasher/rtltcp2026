@@ -942,10 +942,12 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
                 }
                 if cexit.load(Ordering::SeqCst) { break; }
                 if !rl.check() { continue; }
-                if let Ok(mut guard) = write_cipher.lock() {
-                    if let Some(ref mut cipher) = *guard {
-                        cipher.apply_keystream(&mut buf);
-                    }
+                let mut guard = write_cipher.lock().unwrap_or_else(|e| {
+                    warn!("cipher lock poisoned, recovering");
+                    e.into_inner()
+                });
+                if let Some(ref mut cipher) = *guard {
+                    cipher.apply_keystream(&mut buf);
                 }
                 if let Ok(mut guard) = ustream.lock() {
                     if let Err(e) = guard.write_all(&buf) {

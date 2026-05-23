@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use chacha20::cipher::{KeyIvInit, StreamCipher};
@@ -58,6 +59,7 @@ fn test_encrypted_proxy_command_roundtrip() {
     let key = [0x42u8; 32];
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let p = l.local_addr().unwrap().port();
+    let (handshake_done_tx, handshake_done_rx) = mpsc::channel();
 
     let server_key = key;
     thread::spawn(move || {
@@ -74,26 +76,38 @@ fn test_encrypted_proxy_command_roundtrip() {
             chacha20::Key::from_slice(&server_key),
             chacha20::Nonce::from_slice(&peer_nonce),
         );
-        let mut cmd_buf = [0u8; 5];
-        s.read_exact(&mut cmd_buf).unwrap();
-        read_cipher.apply_keystream(&mut cmd_buf);
-        assert_eq!(
-            cmd_buf,
+        handshake_done_tx.send(()).ok();
+
+        let expected_cmds: [[u8; 5]; 3] = [
             [0x01, 0x11, 0x22, 0x33, 0x44],
-            "server should decrypt forwarded command"
-        );
+            [0x02, 0xAA, 0xBB, 0xCC, 0xDD],
+            [0x03, 0x00, 0xFF, 0x00, 0xFF],
+        ];
+        for expected in &expected_cmds {
+            let mut cmd_buf = [0u8; 5];
+            s.read_exact(&mut cmd_buf).unwrap();
+            read_cipher.apply_keystream(&mut cmd_buf);
+            assert_eq!(&cmd_buf, expected, "server should decrypt forwarded command");
+        }
     });
 
-    thread::sleep(Duration::from_millis(50));
     let mut conn = rtltcp2026::proxy::connect_upstream(
         "127.0.0.1", p, Some(key), Duration::from_millis(500)
     ).unwrap();
     assert!(conn.is_chain, "should detect chain mode");
+    handshake_done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
 
     let mut write_cipher = conn.write_cipher
         .expect("write_cipher should be set when key provided");
 
-    let mut cmd = [0x01u8, 0x11, 0x22, 0x33, 0x44];
-    write_cipher.apply_keystream(&mut cmd);
-    conn.stream.write_all(&cmd).unwrap();
+    let cmds: [[u8; 5]; 3] = [
+        [0x01, 0x11, 0x22, 0x33, 0x44],
+        [0x02, 0xAA, 0xBB, 0xCC, 0xDD],
+        [0x03, 0x00, 0xFF, 0x00, 0xFF],
+    ];
+    for cmd in &cmds {
+        let mut encrypted = *cmd;
+        write_cipher.apply_keystream(&mut encrypted);
+        conn.stream.write_all(&encrypted).unwrap();
+    }
 }

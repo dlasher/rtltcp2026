@@ -1,4 +1,12 @@
 # Changelog
+## [0.9.4] - 2026-05-22
+
+### Fixed
+- **Cipher lock poison recovery**: Proxy control thread now logs a warning and recovers from a poisoned `write_cipher` Mutex instead of silently forwarding commands in plaintext.
+
+### Changed
+- **Strengthened encrypted command test**: Expanded to verify keystream continuation across multiple consecutive commands, replacing the previous single-command assertion. Replaced fragile `sleep(50ms)` with channel-based synchronization.
+
 ## [0.9.3] - 2026-05-22
 
 ### Fixed
