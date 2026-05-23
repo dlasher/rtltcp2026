@@ -1,13 +1,17 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use chacha20::{ChaCha20, Key, Nonce};
+use chacha20::cipher::KeyIvInit;
+use tracing::{debug, info};
 use crate::control;
 
 pub struct UpstreamConnection {
     pub stream: TcpStream,
     pub is_chain: bool,
-    pub encryption_key: Option<([u8; 12], [u8; 12])>,
+    #[allow(dead_code)]
+    pub read_cipher: Option<ChaCha20>,
+    pub write_cipher: Option<ChaCha20>,
     pub magic_packet: [u8; 12],
 }
 
@@ -47,7 +51,7 @@ pub fn connect_upstream(
                 .map_err(|e| crate::error::RtlTcpError::Network(
                     format!("nonce exchange failed: {e}")))?;
             info!("encrypted chain established");
-            Some((my_nonce, peer_nonce))
+            Some((enc_key, my_nonce, peer_nonce))
         } else {
             None
         }
@@ -56,5 +60,13 @@ pub fn connect_upstream(
     };
 
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-    Ok(UpstreamConnection { stream, is_chain, encryption_key, magic_packet: magic })
+    let (read_cipher, write_cipher) = match encryption_key {
+        Some((enc_key, my_nonce, peer_nonce)) => {
+            let r = ChaCha20::new(Key::from_slice(&enc_key), Nonce::from_slice(&peer_nonce));
+            let w = ChaCha20::new(Key::from_slice(&enc_key), Nonce::from_slice(&my_nonce));
+            (Some(r), Some(w))
+        }
+        None => (None, None),
+    };
+    Ok(UpstreamConnection { stream, is_chain, read_cipher, write_cipher, magic_packet: magic })
 }

@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::io::{Read, Write};
+use std::io::Read;
 
 #[test]
 fn test_broadcast_send_recv() {

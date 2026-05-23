@@ -595,7 +595,7 @@ fn spawn_master_control_thread(
         let mut stream = stream;
         stream.set_read_timeout(Some(read_timeout)).ok();
         let mut read_cipher: Option<chacha20::ChaCha20> = None;
-        let mut write_cipher: Option<chacha20::ChaCha20> = None;
+        let mut _write_cipher: Option<chacha20::ChaCha20> = None;
         let mut buf = [0u8; COMMAND_HEADER_SIZE];
         let mut rate_limiter = RateLimiter::new(COMMAND_RATE_LIMIT_INTERVAL);
         loop {
@@ -752,7 +752,7 @@ fn spawn_master_control_thread(
                                     chacha20::Key::from_slice(&key),
                                     chacha20::Nonce::from_slice(&peer_nonce),
                                 ));
-                                write_cipher = Some(chacha20::ChaCha20::new(
+                                 _write_cipher = Some(chacha20::ChaCha20::new(
                                     chacha20::Key::from_slice(&key),
                                     chacha20::Nonce::from_slice(&my_nonce),
                                 ));
@@ -839,7 +839,7 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
     let read_timeout = Duration::from_secs(args.read_timeout);
 
     let should_exit = Arc::new(AtomicBool::new(false));
-    let (sender, receiver) = sync_channel(1);
+    let (sender, _receiver) = sync_channel(1);
 
     ctrlc::set_handler({
         let s = sender.clone(); let e = should_exit.clone();
@@ -862,6 +862,7 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
     )?;
     let is_chain = upstream_conn.is_chain;
     let magic_packet = upstream_conn.magic_packet;
+    let upstream_write_cipher = Arc::new(Mutex::new(upstream_conn.write_cipher));
     info!("connected to upstream, chain mode: {is_chain}");
 
     let mut upstream_reader_stream = upstream_conn.stream.try_clone()?;
@@ -928,6 +929,7 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
         // Master control thread: forward commands upstream
         let cexit = should_exit.clone();
         let ustream = upstream_ctl_stream.clone();
+        let write_cipher = upstream_write_cipher.clone();
         let thread_ctl = thread::spawn(move || {
             let mut buf = [0u8; control::COMMAND_HEADER_SIZE];
             let mut rl = control::RateLimiter::new(control::COMMAND_RATE_LIMIT_INTERVAL);
@@ -940,6 +942,11 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
                 }
                 if cexit.load(Ordering::SeqCst) { break; }
                 if !rl.check() { continue; }
+                if let Ok(mut guard) = write_cipher.lock() {
+                    if let Some(ref mut cipher) = *guard {
+                        cipher.apply_keystream(&mut buf);
+                    }
+                }
                 if let Ok(mut guard) = ustream.lock() {
                     if let Err(e) = guard.write_all(&buf) {
                         warn!("failed to forward command: {e}"); break;

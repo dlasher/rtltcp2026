@@ -1,4 +1,13 @@
 # Changelog
+## [0.9.3] - 2026-05-22
+
+### Fixed
+- **Proxy command encryption**: Proxy control thread now encrypts forwarded commands with ChaCha20 when upstream connection is encrypted. Previously commands were sent in plaintext while server expected encrypted data, producing "unsupported command" warnings on the upstream server.
+- **Build warnings eliminated**: removed unused `warn` import, suppressed dead-code warnings on test-only `EncryptedReader`/`EncryptedReader::new`, prefixed unused `_write_cipher`/`_receiver`/`_receiver`.
+
+### Changed
+- `UpstreamConnection.encryption_key` replaced with `read_cipher`/`write_cipher` (ChaCha20 ciphers). `connect_upstream` creates ciphers from exchanged nonces. Downstream consumers use `write_cipher` directly instead of reconstructing ciphers from raw nonces.
+
 ## [0.9.2] - 2026-05-22
 
 ### Fixed

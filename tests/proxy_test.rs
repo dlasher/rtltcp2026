@@ -1,7 +1,8 @@
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::thread;
 use std::time::Duration;
+use chacha20::cipher::{KeyIvInit, StreamCipher};
 
 /// Fake upstream that responds to 0xF0 with ack
 fn start_upstream_chain() -> u16 {
@@ -27,7 +28,7 @@ fn test_chain_detect_handshake() {
     assert!(result.is_ok(), "connect_upstream should succeed with ack upstream");
     let conn = result.unwrap();
     assert!(conn.is_chain, "should detect chain mode");
-    assert!(conn.encryption_key.is_none(), "no key provided");
+    assert!(conn.write_cipher.is_none(), "no key provided");
 }
 
 #[test]
@@ -50,4 +51,49 @@ fn test_chain_detect_timeout_gives_plain() {
     assert!(result.is_ok(), "should fall back gracefully on timeout");
     let conn = result.unwrap();
     assert!(!conn.is_chain, "no chain without ack");
+}
+
+#[test]
+fn test_encrypted_proxy_command_roundtrip() {
+    let key = [0x42u8; 32];
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let p = l.local_addr().unwrap().port();
+
+    let server_key = key;
+    thread::spawn(move || {
+        let (mut s, _) = l.accept().unwrap();
+        s.write_all(b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d").unwrap();
+        let mut buf = [0u8; 5]; s.read_exact(&mut buf).unwrap();
+        assert_eq!(buf[0], 0xF0);
+        s.write_all(&[0xF0, 0x00, 0x00, 0x00, 0x00]).unwrap();
+        let my_nonce = rtltcp2026::encryption::generate_nonce();
+        s.write_all(&my_nonce).unwrap();
+        let mut peer_nonce = [0u8; 12];
+        s.read_exact(&mut peer_nonce).unwrap();
+        let mut read_cipher = chacha20::ChaCha20::new(
+            chacha20::Key::from_slice(&server_key),
+            chacha20::Nonce::from_slice(&peer_nonce),
+        );
+        let mut cmd_buf = [0u8; 5];
+        s.read_exact(&mut cmd_buf).unwrap();
+        read_cipher.apply_keystream(&mut cmd_buf);
+        assert_eq!(
+            cmd_buf,
+            [0x01, 0x11, 0x22, 0x33, 0x44],
+            "server should decrypt forwarded command"
+        );
+    });
+
+    thread::sleep(Duration::from_millis(50));
+    let mut conn = rtltcp2026::proxy::connect_upstream(
+        "127.0.0.1", p, Some(key), Duration::from_millis(500)
+    ).unwrap();
+    assert!(conn.is_chain, "should detect chain mode");
+
+    let mut write_cipher = conn.write_cipher
+        .expect("write_cipher should be set when key provided");
+
+    let mut cmd = [0x01u8, 0x11, 0x22, 0x33, 0x44];
+    write_cipher.apply_keystream(&mut cmd);
+    conn.stream.write_all(&cmd).unwrap();
 }

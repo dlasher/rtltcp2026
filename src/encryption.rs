@@ -30,12 +30,14 @@ impl<W: Write> Write for EncryptedWriter<W> {
 }
 
 /// Reader wrapper that decrypts all data read through it
+#[allow(dead_code)]
 pub struct EncryptedReader<R: Read> {
     inner: R,
     cipher: ChaCha20,
 }
 
 impl<R: Read> EncryptedReader<R> {
+    #[allow(dead_code)]
     pub fn new(inner: R, key: [u8; 32], nonce: [u8; 12]) -> Self {
         Self { inner, cipher: ChaCha20::new(Key::from_slice(&key), Nonce::from_slice(&nonce)) }
     }
