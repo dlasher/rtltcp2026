@@ -1,4 +1,18 @@
 # Changelog
+## [0.10.0] - 2026-05-24
+
+### Added
+- **`rtltcp-capture` binary**: Connects to an RTL_TCP server and saves IQ data with timestamps to a self-describing file format (`RTLX` magic). Supports configurable duration, timeout, and in-memory buffer threshold (`--buffer-mem`). Captures Ctrl-C gracefully with final flush and stats.
+- **`rtltcp-replay` binary**: Replays captured IQ data as a minimal RTL_TCP server. Supports speed control (`--speed 0` = async, `1.0` = realtime), loop mode (`--loop`), and logs all client commands (frequency, sample rate, gain, AGC, etc.) with decoded values.
+- **Capture file format**: Chunked binary format with `RTLX` magic (4 bytes), version (u32 LE), magic payload length + payload, followed by timestamped chunks (timestamp u64 LE, length u32 LE, data).
+- **Command logging test** (`TASK-016`): Integration test verifying all three command types (SET_FREQUENCY, SET_SAMPLE_RATE, CHAIN_DETECT) appear in replay stderr output.
+- **Error-path tests** (`TASK-018`): 6 automated tests covering missing file, corrupted magic, empty file, connection failure, invalid arguments, and clean disconnect.
+
+### Fixed
+- **Replay command reader thread**: Changed from polling `cmd_quit` before each `read_exact` to using `set_read_timeout(200ms)` with `checked`-quit-on-timeout. Previously, buffered commands could be discarded if the main thread finished and set the quit flag while commands were pending in the TCP receive buffer.
+- **`--loop-mode` renamed to `--loop`**: CLI flag now matches the design spec (REQ-012/TASK-010). The `--loop-mode` flag still works as long-form fallback.
+- **Replay tracing output**: Explicitly configured to go to stderr (previously defaulted to stdout), consistent with tracing-subscriber conventions.
+
 ## [0.9.4] - 2026-05-22
 
 ### Fixed

@@ -1,5 +1,6 @@
 //! rtltcp2026 library
 
+pub mod capture;
 pub mod control;
 pub mod encryption;
 pub mod error;
