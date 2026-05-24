@@ -10,7 +10,10 @@ use tracing::{error, info};
 use rtltcp2026::capture::{self, CaptureChunk, CaptureHeader};
 
 #[derive(Parser, Debug)]
-#[clap(name = "rtltcp-capture", about = "Capture IQ data from an RTL_TCP server to a file")]
+#[clap(
+    name = "rtltcp-capture",
+    about = "Capture IQ data from an RTL_TCP server to a file"
+)]
 struct Args {
     output: String,
     #[clap(long, default_value = "127.0.0.1")]
@@ -100,8 +103,9 @@ fn main() {
                 break;
             }
             Ok(n) => n,
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
-                || e.kind() == std::io::ErrorKind::TimedOut =>
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
             {
                 continue;
             }
@@ -120,7 +124,7 @@ fn main() {
 
         let mut chunk_buf = Vec::new();
         if capture::write_chunk(&mut chunk_buf, &chunk).is_ok() {
-                total_bytes += n as u64;
+            total_bytes += n as u64;
             buf.extend_from_slice(&chunk_buf);
 
             if buf.len() >= args.buffer_mem as usize {

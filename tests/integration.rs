@@ -104,7 +104,10 @@ fn help_shows_new_proxy_options() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(stdout.contains("--mode"), "Missing --mode flag");
-    assert!(stdout.contains("--master-port"), "Missing --master-port flag");
+    assert!(
+        stdout.contains("--master-port"),
+        "Missing --master-port flag"
+    );
     assert!(stdout.contains("--slave-port"), "Missing --slave-port flag");
     assert!(stdout.contains("--max-slaves"), "Missing --max-slaves flag");
     assert!(stdout.contains("--upstream"), "Missing --upstream flag");
@@ -142,7 +145,14 @@ fn test_serve_mode_help() {
 #[test]
 fn test_master_slave_same_port_rejected() {
     let output = Command::new(env!("CARGO_BIN_EXE_rtltcp2026"))
-        .args(["--mode", "serve", "--master-port", "1234", "--slave-port", "1234"])
+        .args([
+            "--mode",
+            "serve",
+            "--master-port",
+            "1234",
+            "--slave-port",
+            "1234",
+        ])
         .output()
         .expect("failed to execute binary");
     assert!(!output.status.success());

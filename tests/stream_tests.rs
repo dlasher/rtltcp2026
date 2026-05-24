@@ -1,8 +1,8 @@
+use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::io::Read;
 
 #[test]
 fn test_broadcast_send_recv() {
@@ -25,7 +25,9 @@ fn test_broadcast_lag() {
     let (tx, _rx) = rtltcp2026::stream::new_broadcast(4);
     let mut rx = tx.subscribe();
 
-    for _ in 0..4 { let _ = tx.send(vec![0u8; 64]); }
+    for _ in 0..4 {
+        let _ = tx.send(vec![0u8; 64]);
+    }
     let _ = tx.send(vec![1u8; 64]);
 
     match rx.try_recv() {

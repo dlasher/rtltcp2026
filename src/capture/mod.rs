@@ -43,7 +43,10 @@ pub fn read_header<R: Read>(reader: &mut R) -> io::Result<CaptureHeader> {
     let mut magic = [0u8; 4];
     reader.read_exact(&mut magic)?;
     if &magic != CAPTURE_MAGIC {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid capture magic"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid capture magic",
+        ));
     }
     let mut version_buf = [0u8; 4];
     reader.read_exact(&mut version_buf)?;
@@ -91,9 +94,18 @@ mod tests {
         };
 
         let chunks = vec![
-            CaptureChunk { timestamp_ns: 1000, data: vec![0u8; 64] },
-            CaptureChunk { timestamp_ns: 2000, data: vec![1u8; 128] },
-            CaptureChunk { timestamp_ns: 3000, data: vec![2u8; 256] },
+            CaptureChunk {
+                timestamp_ns: 1000,
+                data: vec![0u8; 64],
+            },
+            CaptureChunk {
+                timestamp_ns: 2000,
+                data: vec![1u8; 128],
+            },
+            CaptureChunk {
+                timestamp_ns: 3000,
+                data: vec![2u8; 256],
+            },
         ];
 
         let mut cursor = Cursor::new(Vec::new());
@@ -116,10 +128,18 @@ mod tests {
 
     #[test]
     fn test_roundtrip_empty_chunk() {
-        let header = CaptureHeader { magic_payload: vec![0u8; 12] };
+        let header = CaptureHeader {
+            magic_payload: vec![0u8; 12],
+        };
         let chunks = vec![
-            CaptureChunk { timestamp_ns: 42, data: vec![] },
-            CaptureChunk { timestamp_ns: 99, data: vec![0xAB; 1] },
+            CaptureChunk {
+                timestamp_ns: 42,
+                data: vec![],
+            },
+            CaptureChunk {
+                timestamp_ns: 99,
+                data: vec![0xAB; 1],
+            },
         ];
 
         let mut cursor = Cursor::new(Vec::new());
@@ -139,11 +159,15 @@ mod tests {
 
     #[test]
     fn test_buffer_flush_identity() {
-        let header = CaptureHeader { magic_payload: vec![0u8; 12] };
-        let chunks: Vec<_> = (0..10).map(|i| CaptureChunk {
-            timestamp_ns: i as u64 * 1000,
-            data: vec![i as u8; 32],
-        }).collect();
+        let header = CaptureHeader {
+            magic_payload: vec![0u8; 12],
+        };
+        let chunks: Vec<_> = (0..10)
+            .map(|i| CaptureChunk {
+                timestamp_ns: i as u64 * 1000,
+                data: vec![i as u8; 32],
+            })
+            .collect();
 
         // Write all at once (unbuffered)
         let mut all_at_once = Cursor::new(Vec::new());
@@ -174,7 +198,9 @@ mod tests {
 
     #[test]
     fn test_invalid_magic_rejected() {
-        let mut cursor = Cursor::new(b"XXXX\x01\x00\x00\x00\x0c\x00\x00\x00RTL0\x00\x00\x00\x05\x00\x00\x00\x1d" as &[u8]);
+        let mut cursor = Cursor::new(
+            b"XXXX\x01\x00\x00\x00\x0c\x00\x00\x00RTL0\x00\x00\x00\x05\x00\x00\x00\x1d" as &[u8],
+        );
         let result = read_header(&mut cursor);
         assert!(result.is_err());
     }

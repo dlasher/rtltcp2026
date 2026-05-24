@@ -27,7 +27,9 @@ struct Args {
 const HEADER_FIXED_SIZE: u64 = 12;
 
 fn main() {
-    tracing_subscriber::fmt().with_writer(std::io::stderr).init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
     let args = Args::parse();
 
     let mut file = match std::fs::File::open(&args.input) {
@@ -46,7 +48,9 @@ fn main() {
         }
     };
 
-    let first_chunk_offset = file.stream_position().unwrap_or(HEADER_FIXED_SIZE + header.magic_payload.len() as u64);
+    let first_chunk_offset = file
+        .stream_position()
+        .unwrap_or(HEADER_FIXED_SIZE + header.magic_payload.len() as u64);
     info!(
         "loaded capture: {} bytes magic payload, {} chunks",
         header.magic_payload.len(),
@@ -90,64 +94,65 @@ fn main() {
     let _ = cmd_stream.set_read_timeout(Some(Duration::from_millis(200)));
     let reader_quit = cmd_quit.clone();
     let cmd_thread = std::thread::spawn(move || {
-            let mut buf = [0u8; control::COMMAND_HEADER_SIZE];
-            loop {
-                match cmd_stream.read_exact(&mut buf) {
-                    Ok(()) => {
-                        let cmd = buf[0];
-                        let payload_hex = hex::encode(&buf[1..]);
-                        match cmd {
-                            control::CMD_SET_FREQUENCY => {
-                                let freq = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
-                                info!("client command: SET_FREQUENCY freq={freq}");
-                            }
-                            control::CMD_SET_SAMPLE_RATE => {
-                                let rate = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
-                                info!("client command: SET_SAMPLE_RATE rate={rate}");
-                            }
-                            control::CMD_SET_GAIN_MODE => {
-                                let mode = i32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
-                                info!("client command: SET_GAIN_MODE mode={mode}");
-                            }
-                            control::CMD_SET_TUNER_GAIN => {
-                                let gain = i32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
-                                info!("client command: SET_TUNER_GAIN gain={gain}");
-                            }
-                            control::CMD_SET_PPM => {
-                                let ppm = i32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
-                                info!("client command: SET_PPM ppm={ppm}");
-                            }
-                            control::CMD_SET_AGC => {
-                                let agc = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
-                                info!("client command: SET_AGC agc={agc}");
-                            }
-                            control::CMD_CHAIN_DETECT => {
-                                info!("client command: CHAIN_DETECT");
-                            }
-                            _ => {
-                                info!("client command: UNKNOWN payload={payload_hex}");
-                            }
+        let mut buf = [0u8; control::COMMAND_HEADER_SIZE];
+        loop {
+            match cmd_stream.read_exact(&mut buf) {
+                Ok(()) => {
+                    let cmd = buf[0];
+                    let payload_hex = hex::encode(&buf[1..]);
+                    match cmd {
+                        control::CMD_SET_FREQUENCY => {
+                            let freq = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+                            info!("client command: SET_FREQUENCY freq={freq}");
                         }
-                    }
-                    Err(ref e) if is_disconnect_err(e) => {
-                        debug!("client disconnected (command reader)");
-                        break;
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut
-                        || e.kind() == std::io::ErrorKind::WouldBlock =>
-                    {
-                        if reader_quit.load(Ordering::SeqCst) {
-                            break;
+                        control::CMD_SET_SAMPLE_RATE => {
+                            let rate = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+                            info!("client command: SET_SAMPLE_RATE rate={rate}");
                         }
-                        continue;
-                    }
-                    Err(e) => {
-                        warn!("command read error: {e}");
-                        break;
+                        control::CMD_SET_GAIN_MODE => {
+                            let mode = i32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+                            info!("client command: SET_GAIN_MODE mode={mode}");
+                        }
+                        control::CMD_SET_TUNER_GAIN => {
+                            let gain = i32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+                            info!("client command: SET_TUNER_GAIN gain={gain}");
+                        }
+                        control::CMD_SET_PPM => {
+                            let ppm = i32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+                            info!("client command: SET_PPM ppm={ppm}");
+                        }
+                        control::CMD_SET_AGC => {
+                            let agc = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+                            info!("client command: SET_AGC agc={agc}");
+                        }
+                        control::CMD_CHAIN_DETECT => {
+                            info!("client command: CHAIN_DETECT");
+                        }
+                        _ => {
+                            info!("client command: UNKNOWN payload={payload_hex}");
+                        }
                     }
                 }
+                Err(ref e) if is_disconnect_err(e) => {
+                    debug!("client disconnected (command reader)");
+                    break;
+                }
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::TimedOut
+                        || e.kind() == std::io::ErrorKind::WouldBlock =>
+                {
+                    if reader_quit.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    continue;
+                }
+                Err(e) => {
+                    warn!("command read error: {e}");
+                    break;
+                }
             }
-        });
+        }
+    });
 
     let mut prev_timestamp: Option<u64> = None;
     loop {

@@ -1,14 +1,16 @@
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
 
 pub const DEFAULT_BROADCAST_CAPACITY: usize = 64;
 
-pub fn new_broadcast(capacity: usize) -> (broadcast::Sender<Vec<u8>>, broadcast::Receiver<Vec<u8>>) {
+pub fn new_broadcast(
+    capacity: usize,
+) -> (broadcast::Sender<Vec<u8>>, broadcast::Receiver<Vec<u8>>) {
     broadcast::channel(capacity)
 }
 

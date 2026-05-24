@@ -1,9 +1,9 @@
+use chacha20::cipher::{KeyIvInit, StreamCipher};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
-use chacha20::cipher::{KeyIvInit, StreamCipher};
 
 /// Fake upstream that responds to 0xF0 with ack
 fn start_upstream_chain() -> u16 {
@@ -11,8 +11,10 @@ fn start_upstream_chain() -> u16 {
     let p = l.local_addr().unwrap().port();
     thread::spawn(move || {
         let (mut s, _) = l.accept().unwrap();
-        s.write_all(b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d").unwrap();
-        let mut buf = [0u8; 5]; s.read_exact(&mut buf).unwrap();
+        s.write_all(b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d")
+            .unwrap();
+        let mut buf = [0u8; 5];
+        s.read_exact(&mut buf).unwrap();
         assert_eq!(buf[0], 0xF0);
         s.write_all(&[0xF0, 0x00, 0x00, 0x00, 0x00]).unwrap();
     });
@@ -23,10 +25,12 @@ fn start_upstream_chain() -> u16 {
 fn test_chain_detect_handshake() {
     let p = start_upstream_chain();
     thread::sleep(Duration::from_millis(50));
-    let result = rtltcp2026::proxy::connect_upstream(
-        "127.0.0.1", p, None, Duration::from_millis(500)
+    let result =
+        rtltcp2026::proxy::connect_upstream("127.0.0.1", p, None, Duration::from_millis(500));
+    assert!(
+        result.is_ok(),
+        "connect_upstream should succeed with ack upstream"
     );
-    assert!(result.is_ok(), "connect_upstream should succeed with ack upstream");
     let conn = result.unwrap();
     assert!(conn.is_chain, "should detect chain mode");
     assert!(conn.write_cipher.is_none(), "no key provided");
@@ -39,16 +43,17 @@ fn test_chain_detect_timeout_gives_plain() {
     let p = l.local_addr().unwrap().port();
     thread::spawn(move || {
         let (mut s, _) = l.accept().unwrap();
-        s.write_all(b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d").unwrap();
-        let mut buf = [0u8; 5]; s.read_exact(&mut buf).unwrap();
+        s.write_all(b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d")
+            .unwrap();
+        let mut buf = [0u8; 5];
+        s.read_exact(&mut buf).unwrap();
         assert_eq!(buf[0], 0xF0);
         thread::sleep(Duration::from_millis(600));
     });
 
     thread::sleep(Duration::from_millis(50));
-    let result = rtltcp2026::proxy::connect_upstream(
-        "127.0.0.1", p, None, Duration::from_millis(200)
-    );
+    let result =
+        rtltcp2026::proxy::connect_upstream("127.0.0.1", p, None, Duration::from_millis(200));
     assert!(result.is_ok(), "should fall back gracefully on timeout");
     let conn = result.unwrap();
     assert!(!conn.is_chain, "no chain without ack");
@@ -64,8 +69,10 @@ fn test_encrypted_proxy_command_roundtrip() {
     let server_key = key;
     thread::spawn(move || {
         let (mut s, _) = l.accept().unwrap();
-        s.write_all(b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d").unwrap();
-        let mut buf = [0u8; 5]; s.read_exact(&mut buf).unwrap();
+        s.write_all(b"RTL0\x00\x00\x00\x05\x00\x00\x00\x1d")
+            .unwrap();
+        let mut buf = [0u8; 5];
+        s.read_exact(&mut buf).unwrap();
         assert_eq!(buf[0], 0xF0);
         s.write_all(&[0xF0, 0x00, 0x00, 0x00, 0x00]).unwrap();
         let my_nonce = rtltcp2026::encryption::generate_nonce();
@@ -87,17 +94,23 @@ fn test_encrypted_proxy_command_roundtrip() {
             let mut cmd_buf = [0u8; 5];
             s.read_exact(&mut cmd_buf).unwrap();
             read_cipher.apply_keystream(&mut cmd_buf);
-            assert_eq!(&cmd_buf, expected, "server should decrypt forwarded command");
+            assert_eq!(
+                &cmd_buf, expected,
+                "server should decrypt forwarded command"
+            );
         }
     });
 
-    let mut conn = rtltcp2026::proxy::connect_upstream(
-        "127.0.0.1", p, Some(key), Duration::from_millis(500)
-    ).unwrap();
+    let mut conn =
+        rtltcp2026::proxy::connect_upstream("127.0.0.1", p, Some(key), Duration::from_millis(500))
+            .unwrap();
     assert!(conn.is_chain, "should detect chain mode");
-    handshake_done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    handshake_done_rx
+        .recv_timeout(Duration::from_secs(2))
+        .unwrap();
 
-    let mut write_cipher = conn.write_cipher
+    let mut write_cipher = conn
+        .write_cipher
         .expect("write_cipher should be set when key provided");
 
     let cmds: [[u8; 5]; 3] = [

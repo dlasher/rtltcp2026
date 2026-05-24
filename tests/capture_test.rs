@@ -56,8 +56,10 @@ fn test_replay_magic_and_data() {
     let port = find_free_port();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtltcp-replay"))
         .arg(&cap_str)
-        .arg("--port").arg(port.to_string())
-        .arg("--speed").arg("0")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--speed")
+        .arg("0")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -90,8 +92,10 @@ fn test_replay_exits_cleanly_on_disconnect() {
     let port = find_free_port();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtltcp-replay"))
         .arg(&cap_str)
-        .arg("--port").arg(port.to_string())
-        .arg("--speed").arg("0")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--speed")
+        .arg("0")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -121,17 +125,16 @@ fn test_replay_logs_client_commands() {
     create_capture_file(&cap_str, &chunks);
 
     let port = find_free_port();
-    let log_path = std::env::temp_dir()
-        .join(format!("replay_cmd_log_{}", std::process::id()));
+    let log_path = std::env::temp_dir().join(format!("replay_cmd_log_{}", std::process::id()));
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtltcp-replay"))
         .arg(&cap_str)
-        .arg("--port").arg(port.to_string())
-        .arg("--speed").arg("1.0")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--speed")
+        .arg("1.0")
         .stdout(Stdio::null())
-        .stderr(Stdio::from(
-            std::fs::File::create(&log_path).unwrap(),
-        ))
+        .stderr(Stdio::from(std::fs::File::create(&log_path).unwrap()))
         .spawn()
         .expect("failed to start replay");
 
@@ -160,9 +163,18 @@ fn test_replay_logs_client_commands() {
 
     let log_content = std::fs::read_to_string(&log_path).unwrap_or_default();
     let _ = std::fs::remove_file(&log_path);
-    assert!(log_content.contains("SET_FREQUENCY"), "missing SET_FREQUENCY\n{log_content}");
-    assert!(log_content.contains("SET_SAMPLE_RATE"), "missing SET_SAMPLE_RATE\n{log_content}");
-    assert!(log_content.contains("CHAIN_DETECT"), "missing CHAIN_DETECT\n{log_content}");
+    assert!(
+        log_content.contains("SET_FREQUENCY"),
+        "missing SET_FREQUENCY\n{log_content}"
+    );
+    assert!(
+        log_content.contains("SET_SAMPLE_RATE"),
+        "missing SET_SAMPLE_RATE\n{log_content}"
+    );
+    assert!(
+        log_content.contains("CHAIN_DETECT"),
+        "missing CHAIN_DETECT\n{log_content}"
+    );
 }
 
 #[test]
@@ -170,8 +182,10 @@ fn test_replay_missing_file_errors() {
     let port = find_free_port();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtltcp-replay"))
         .arg("/nonexistent/path.bin")
-        .arg("--port").arg(port.to_string())
-        .arg("--speed").arg("0")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--speed")
+        .arg("0")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -186,8 +200,10 @@ fn test_replay_corrupted_file_errors() {
     let port = find_free_port();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtltcp-replay"))
         .arg(&cap_str)
-        .arg("--port").arg(port.to_string())
-        .arg("--speed").arg("0")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--speed")
+        .arg("0")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -202,8 +218,10 @@ fn test_replay_empty_file_errors() {
     let port = find_free_port();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtltcp-replay"))
         .arg(&cap_str)
-        .arg("--port").arg(port.to_string())
-        .arg("--speed").arg("0")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--speed")
+        .arg("0")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -216,9 +234,12 @@ fn test_capture_connection_failure_errors() {
     let port = find_free_port();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rtltcp-capture"))
         .arg("/tmp/capture_fail.bin")
-        .arg("--port").arg(port.to_string())
-        .arg("--duration").arg("1")
-        .arg("--timeout").arg("1")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--duration")
+        .arg("1")
+        .arg("--timeout")
+        .arg("1")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

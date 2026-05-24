@@ -45,8 +45,12 @@ fn test_master_slave_same_iq() {
 
     let mut master = TcpStream::connect("127.0.0.1:9941").unwrap();
     let mut slave = TcpStream::connect("127.0.0.1:9942").unwrap();
-    master.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-    slave.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    master
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    slave
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
 
     let mut mm = [0u8; 12];
     master.read_exact(&mut mm).unwrap();
@@ -93,7 +97,9 @@ fn test_slave_command_silently_consumed() {
     thread::sleep(Duration::from_millis(100));
 
     // Slave should NOT receive any response to its commands
-    slave.set_read_timeout(Some(Duration::from_millis(50))).unwrap();
+    slave
+        .set_read_timeout(Some(Duration::from_millis(50)))
+        .unwrap();
     let mut response_buf = [0u8; 1];
     let read_result = slave.read(&mut response_buf);
     assert!(

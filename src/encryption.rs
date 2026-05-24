@@ -4,9 +4,9 @@
 //! transparently encrypt/decrypt a TCP stream using ChaCha20.
 //! Also provides `nonce_exchange` for peers to share initialization vectors.
 
-use std::io::{Read, Write};
-use chacha20::{ChaCha20, Key, Nonce};
 use chacha20::cipher::{KeyIvInit, StreamCipher};
+use chacha20::{ChaCha20, Key, Nonce};
+use std::io::{Read, Write};
 
 /// Writer wrapper that encrypts all data written through it
 pub struct EncryptedWriter<W: Write> {
@@ -16,7 +16,10 @@ pub struct EncryptedWriter<W: Write> {
 
 impl<W: Write> EncryptedWriter<W> {
     pub fn new(inner: W, key: [u8; 32], nonce: [u8; 12]) -> Self {
-        Self { inner, cipher: ChaCha20::new(Key::from_slice(&key), Nonce::from_slice(&nonce)) }
+        Self {
+            inner,
+            cipher: ChaCha20::new(Key::from_slice(&key), Nonce::from_slice(&nonce)),
+        }
     }
 }
 
@@ -26,7 +29,9 @@ impl<W: Write> Write for EncryptedWriter<W> {
         self.cipher.apply_keystream(&mut encrypted);
         self.inner.write(&encrypted)
     }
-    fn flush(&mut self) -> std::io::Result<()> { self.inner.flush() }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 /// Reader wrapper that decrypts all data read through it
@@ -39,7 +44,10 @@ pub struct EncryptedReader<R: Read> {
 impl<R: Read> EncryptedReader<R> {
     #[allow(dead_code)]
     pub fn new(inner: R, key: [u8; 32], nonce: [u8; 12]) -> Self {
-        Self { inner, cipher: ChaCha20::new(Key::from_slice(&key), Nonce::from_slice(&nonce)) }
+        Self {
+            inner,
+            cipher: ChaCha20::new(Key::from_slice(&key), Nonce::from_slice(&nonce)),
+        }
     }
 }
 
@@ -97,7 +105,8 @@ mod tests {
 
     #[test]
     fn test_internal_encrypted_roundtrip() {
-        let key = [0xABu8; 32]; let nonce = [0x42u8; 12];
+        let key = [0xABu8; 32];
+        let nonce = [0x42u8; 12];
         let (w, r) = std::os::unix::net::UnixStream::pair().unwrap();
         let mut er = EncryptedReader::new(r, key, nonce);
         let data = b"Hello!";

@@ -56,7 +56,7 @@ jobs:
           sudo apt-get install -y librtlsdr-dev libsystemd-dev
       - uses: Swatinem/rust-cache@v2
       - name: Clippy check
-        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+        run: cargo clippy --all-targets --features daemon_systemd --workspace -- -D warnings
 
   docs:
     name: Docs
@@ -70,7 +70,7 @@ jobs:
       - name: Check documentation
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps --document-private-items --all-features --workspace --examples
+        run: cargo doc --no-deps --document-private-items --features daemon_systemd --workspace --examples
 
   publish-dry-run:
     name: Publish dry run
@@ -108,7 +108,7 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --features daemon_systemd
       - name: Clippy check
-        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+        run: cargo clippy --all-targets --features daemon_systemd --workspace -- -D warnings
 
   coverage:
     name: Code coverage
@@ -127,7 +127,7 @@ jobs:
       - name: Install cargo-tarpaulin
         uses: taiki-e/install-action@cargo-tarpaulin
       - name: Run cargo-tarpaulin
-        run: cargo tarpaulin --all-features --workspace --ignore-tests --out Lcov
+        run: cargo tarpaulin --features daemon_systemd --workspace --ignore-tests --out Lcov
       - name: Upload to Coveralls
         # upload only if push
         if: ${{ github.event_name == 'push' }}

@@ -17,9 +17,9 @@ use tracing::{debug, info, warn};
 type EncryptionNonces = Arc<Mutex<Option<([u8; 12], [u8; 12])>>>;
 use tokio::sync::broadcast;
 
-mod error;
 mod control;
 mod encryption;
+mod error;
 mod proxy;
 pub mod stream;
 use crate::control::*;
@@ -44,7 +44,12 @@ struct Args {
     address: String,
 
     /// master port — accepts the driver connection (alias for --port)
-    #[clap(short = 'p', long = "master-port", alias = "port", default_value_t = 1234)]
+    #[clap(
+        short = 'p',
+        long = "master-port",
+        alias = "port",
+        default_value_t = 1234
+    )]
     master_port: u16,
 
     /// slave port — accepts read-only consumer connections
@@ -148,14 +153,15 @@ fn bind_master_port(args: &Args) -> StdResult<TcpListener, RtlTcpError> {
     #[cfg(feature = "systemd")]
     {
         let mut listenfd = ListenFd::from_env();
-        if let Some(listener) = listenfd.take_tcp_listener(0).map_err(|e| {
-            RtlTcpError::Config(format!("could not get fd from env: {e}"))
-        })? {
+        if let Some(listener) = listenfd
+            .take_tcp_listener(0)
+            .map_err(|e| RtlTcpError::Config(format!("could not get fd from env: {e}")))?
+        {
             systemd::daemon::notify(false, [(systemd::daemon::STATE_READY, "1")].iter())?;
             return Ok(listener);
         }
     }
-    TcpListener::bind(&addr).map_err(Into::into)
+    TcpListener::bind(addr).map_err(Into::into)
 }
 
 /// Single-client serve mode (original behavior)
@@ -241,8 +247,7 @@ fn run_serve_single(args: Args) -> StdResult<(), RtlTcpError> {
                 match stream.read_exact(&mut buf) {
                     Ok(()) => {}
                     Err(e)
-                        if e.kind() == ErrorKind::WouldBlock
-                            || e.kind() == ErrorKind::TimedOut =>
+                        if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut =>
                     {
                         continue;
                     }
@@ -372,19 +377,21 @@ fn run_serve_single(args: Args) -> StdResult<(), RtlTcpError> {
                                 }
                             });
                         }
-                     }
-                     CMD_CHAIN_DETECT => {
-                         info!("chain detection probe from downstream proxy");
-                         if let Err(e) = stream.write_all(&[CMD_CHAIN_DETECT, 0x00, 0x00, 0x00, 0x00]) {
-                             warn!("failed to send chain detect ack: {e}");
-                         }
-                     }
-                     _ => {
+                    }
+                    CMD_CHAIN_DETECT => {
+                        info!("chain detection probe from downstream proxy");
+                        if let Err(e) =
+                            stream.write_all(&[CMD_CHAIN_DETECT, 0x00, 0x00, 0x00, 0x00])
+                        {
+                            warn!("failed to send chain detect ack: {e}");
+                        }
+                    }
+                    _ => {
                         // Task 2.3: Changed from debug! to warn! and added counter
                         let mut count = unknown_command_count.lock().unwrap();
                         *count += 1;
                         warn!("recv unsupported command {buf:?} (total unknown commands: {count})");
-                     }
+                    }
                 }
             }
             info!("control thread exiting");
@@ -449,8 +456,16 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
     let read_timeout = Duration::from_secs(args.read_timeout);
 
     // Warn when binding to all interfaces
-    let is_all = args.address == "0.0.0.0" || args.address == "::" || args.address == "[::]" || args.address.is_empty();
-    if is_all { warn!("binding to all interfaces ({}) — exposes server to all networks", args.address); }
+    let is_all = args.address == "0.0.0.0"
+        || args.address == "::"
+        || args.address == "[::]"
+        || args.address.is_empty();
+    if is_all {
+        warn!(
+            "binding to all interfaces ({}) — exposes server to all networks",
+            args.address
+        );
+    }
 
     let (ctl, mut reader) = rtlsdr_mt::open(args.device_index)
         .map_err(|e| RtlTcpError::Device(format!("could not open RTL-SDR device: {e:?}")))?;
@@ -474,7 +489,8 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
             let _ = s.try_send(());
             exit.store(true, Ordering::SeqCst);
         }
-    }).map_err(|e| RtlTcpError::Config(format!("could not set signal handler: {e}")))?;
+    })
+    .map_err(|e| RtlTcpError::Config(format!("could not set signal handler: {e}")))?;
 
     // Bind master port
     let master_listener = bind_master_port(&args)?;
@@ -486,9 +502,14 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
 
     // Start slave acceptor thread (runs for the life of the process)
     spawn_slave_acceptor(
-        slave_listener, tx.clone(), magic_packet.to_vec(),
-        args.whitelist.clone(), args.max_slaves, args.tcp_buffers,
-        should_exit.clone(), all_streams.clone(),
+        slave_listener,
+        tx.clone(),
+        magic_packet.to_vec(),
+        args.whitelist.clone(),
+        args.max_slaves,
+        args.tcp_buffers,
+        should_exit.clone(),
+        all_streams.clone(),
     );
 
     // Cancel thread (listens for shutdown signal)
@@ -508,7 +529,9 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
     // Master reconnection loop (non-blocking accept so Ctrl-C can interrupt)
     master_listener.set_nonblocking(true)?;
     loop {
-        if should_exit.load(Ordering::SeqCst) { break; }
+        if should_exit.load(Ordering::SeqCst) {
+            break;
+        }
         let (master_stream, addr) = match master_listener.accept() {
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(100));
@@ -518,8 +541,10 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
             Ok(conn) => conn,
         };
         let client_ip = addr.ip().to_canonical().to_string();
-        check_whitelist(&client_ip, &args.whitelist)
-            .map_err(|e| { warn!("Connection from {client_ip} refused"); e })?;
+        check_whitelist(&client_ip, &args.whitelist).map_err(|e| {
+            warn!("Connection from {client_ip} refused");
+            e
+        })?;
         info!("master connected from {addr}");
         master_stream.set_read_timeout(Some(read_timeout))?;
         master_stream.set_write_timeout(Some(Duration::from_secs(args.write_timeout)))?;
@@ -556,16 +581,23 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
         // Start master control thread
         let unknown_count = Arc::new(Mutex::new(0u64));
         let thread_ctl = spawn_master_control_thread(
-            master_stream.try_clone()?, ctl.clone(), agc_state.clone(),
-            unknown_count, should_exit.clone(), read_timeout,
-            encryption_key, encryption_nonces.clone(),
+            master_stream.try_clone()?,
+            ctl.clone(),
+            agc_state.clone(),
+            unknown_count,
+            should_exit.clone(),
+            read_timeout,
+            encryption_key,
+            encryption_nonces.clone(),
         );
 
         // Wait for control thread (exits on master disconnect)
         let _ = thread_ctl.join();
         info!("master disconnected, ready for reconnection");
 
-        if should_exit.load(Ordering::SeqCst) { break; }
+        if should_exit.load(Ordering::SeqCst) {
+            break;
+        }
     }
 
     // Full shutdown
@@ -575,7 +607,9 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
 
     {
         let streams = all_streams.lock().unwrap();
-        for s in streams.iter() { let _ = s.shutdown(Shutdown::Both); }
+        for s in streams.iter() {
+            let _ = s.shutdown(Shutdown::Both);
+        }
     }
 
     info!("multi-client serve shut down");
@@ -602,35 +636,32 @@ fn spawn_master_control_thread(
         let mut buf = [0u8; COMMAND_HEADER_SIZE];
         let mut rate_limiter = RateLimiter::new(COMMAND_RATE_LIMIT_INTERVAL);
         loop {
-                match stream.read_exact(&mut buf) {
-                    Ok(()) => {
-                        if let Some(ref mut cipher) = read_cipher {
-                            cipher.apply_keystream(&mut buf);
-                        }
-                    }
-                    Err(e)
-                        if e.kind() == ErrorKind::WouldBlock
-                            || e.kind() == ErrorKind::TimedOut =>
-                    {
-                        continue;
-                    }
-                    Err(e)
-                        if e.kind() == ErrorKind::UnexpectedEof
-                            || e.kind() == ErrorKind::ConnectionReset
-                            || e.kind() == ErrorKind::BrokenPipe
-                            || e.kind() == ErrorKind::ConnectionAborted
-                            || e.kind() == ErrorKind::NotConnected =>
-                    {
-                        info!("client disconnected: {e}");
-                        break;
-                    }
-                    Err(e) => {
-                        warn!("read error from client: {e}");
-                        break;
+            match stream.read_exact(&mut buf) {
+                Ok(()) => {
+                    if let Some(ref mut cipher) = read_cipher {
+                        cipher.apply_keystream(&mut buf);
                     }
                 }
+                Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {
+                    continue;
+                }
+                Err(e)
+                    if e.kind() == ErrorKind::UnexpectedEof
+                        || e.kind() == ErrorKind::ConnectionReset
+                        || e.kind() == ErrorKind::BrokenPipe
+                        || e.kind() == ErrorKind::ConnectionAborted
+                        || e.kind() == ErrorKind::NotConnected =>
+                {
+                    info!("client disconnected: {e}");
+                    break;
+                }
+                Err(e) => {
+                    warn!("read error from client: {e}");
+                    break;
+                }
+            }
 
-                if should_exit.load(Ordering::SeqCst) {
+            if should_exit.load(Ordering::SeqCst) {
                 info!("exit flag set, stopping control thread");
                 break;
             }
@@ -755,7 +786,7 @@ fn spawn_master_control_thread(
                                     chacha20::Key::from_slice(&key),
                                     chacha20::Nonce::from_slice(&peer_nonce),
                                 ));
-                                 _write_cipher = Some(chacha20::ChaCha20::new(
+                                _write_cipher = Some(chacha20::ChaCha20::new(
                                     chacha20::Key::from_slice(&key),
                                     chacha20::Nonce::from_slice(&my_nonce),
                                 ));
@@ -779,15 +810,22 @@ fn spawn_master_control_thread(
 /// Spawn the slave acceptor thread with non-blocking accept loop
 #[allow(clippy::too_many_arguments)]
 fn spawn_slave_acceptor(
-    listener: TcpListener, tx: broadcast::Sender<Vec<u8>>, magic: Vec<u8>,
-    whitelist: Vec<String>, max_slaves: usize, tcp_buffers: usize,
-    should_exit: Arc<AtomicBool>, all_streams: Arc<Mutex<Vec<TcpStream>>>,
+    listener: TcpListener,
+    tx: broadcast::Sender<Vec<u8>>,
+    magic: Vec<u8>,
+    whitelist: Vec<String>,
+    max_slaves: usize,
+    tcp_buffers: usize,
+    should_exit: Arc<AtomicBool>,
+    all_streams: Arc<Mutex<Vec<TcpStream>>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         listener.set_nonblocking(true).ok();
         let mut count = 0usize;
         loop {
-            if should_exit.load(Ordering::SeqCst) { break; }
+            if should_exit.load(Ordering::SeqCst) {
+                break;
+            }
             if count >= max_slaves {
                 thread::sleep(Duration::from_millis(100));
                 continue;
@@ -796,11 +834,15 @@ fn spawn_slave_acceptor(
                 Ok((stream, addr)) => {
                     let ip = addr.ip().to_canonical().to_string();
                     if let Err(e) = check_whitelist(&ip, &whitelist) {
-                        warn!("slave {ip} refused: {e}"); continue;
+                        warn!("slave {ip} refused: {e}");
+                        continue;
                     }
                     info!("slave connected from {addr}");
                     stream.set_write_timeout(Some(Duration::from_secs(30))).ok();
-                    all_streams.lock().unwrap().push(stream.try_clone().unwrap());
+                    all_streams
+                        .lock()
+                        .unwrap()
+                        .push(stream.try_clone().unwrap());
                     let mut bw = BufWriter::with_capacity(tcp_buffers, stream.try_clone().unwrap());
                     let _ = bw.write_all(&magic);
                     let _ = bw.flush();
@@ -814,7 +856,10 @@ fn spawn_slave_acceptor(
                 Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(10));
                 }
-                Err(e) => { warn!("slave accept error: {e}"); thread::sleep(Duration::from_millis(100)); }
+                Err(e) => {
+                    warn!("slave accept error: {e}");
+                    thread::sleep(Duration::from_millis(100));
+                }
             }
         }
     })
@@ -838,7 +883,9 @@ fn spawn_cancel_thread(
 
 /// Proxy mode: connect upstream, accept local master+slaves, fan-out
 fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
-    let upstream = args.upstream.as_ref()
+    let upstream = args
+        .upstream
+        .as_ref()
         .ok_or_else(|| RtlTcpError::Config("--upstream required in proxy mode".to_string()))?;
     let read_timeout = Duration::from_secs(args.read_timeout);
 
@@ -846,23 +893,37 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
     let (sender, _receiver) = sync_channel(1);
 
     ctrlc::set_handler({
-        let s = sender.clone(); let e = should_exit.clone();
-        move || { info!("received signal"); let _ = s.try_send(()); e.store(true, Ordering::SeqCst); }
-    }).map_err(|e| RtlTcpError::Config(format!("could not set signal handler: {e}")))?;
+        let s = sender.clone();
+        let e = should_exit.clone();
+        move || {
+            info!("received signal");
+            let _ = s.try_send(());
+            e.store(true, Ordering::SeqCst);
+        }
+    })
+    .map_err(|e| RtlTcpError::Config(format!("could not set signal handler: {e}")))?;
 
     let master_listener = bind_master_port(&args)?;
-    let slave_listener = args.slave_port.map(|sp| TcpListener::bind(format!("{}:{}", args.address, sp))).transpose()?;
+    let slave_listener = args
+        .slave_port
+        .map(|sp| TcpListener::bind(format!("{}:{}", args.address, sp)))
+        .transpose()?;
 
-    let (upstream_host, upstream_port_str) = upstream.rsplit_once(':')
+    let (upstream_host, upstream_port_str) = upstream
+        .rsplit_once(':')
         .ok_or_else(|| RtlTcpError::Config(format!("invalid upstream: {upstream}")))?;
-    let upstream_port: u16 = upstream_port_str.parse()
+    let upstream_port: u16 = upstream_port_str
+        .parse()
         .map_err(|_| RtlTcpError::Config(format!("invalid upstream port: {upstream_port_str}")))?;
 
     let encryption_key = parse_encryption_key(&args)?;
 
     // Connect upstream once — survives master reconnections
     let upstream_conn = proxy::connect_upstream(
-        upstream_host, upstream_port, encryption_key, Duration::from_millis(500)
+        upstream_host,
+        upstream_port,
+        encryption_key,
+        Duration::from_millis(500),
     )?;
     let is_chain = upstream_conn.is_chain;
     let magic_packet = upstream_conn.magic_packet;
@@ -875,16 +936,33 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
     let (tx, _rx) = stream::new_broadcast(stream::DEFAULT_BROADCAST_CAPACITY);
 
     // Start upstream reader thread → broadcast
-    let utx = tx.clone(); let uexit = should_exit.clone(); let usender = sender.clone();
+    let utx = tx.clone();
+    let uexit = should_exit.clone();
+    let usender = sender.clone();
     let thread_upstream = thread::spawn(move || {
         let mut buf = vec![0u8; 512 * 1024];
         loop {
-            if uexit.load(Ordering::SeqCst) { break; }
+            if uexit.load(Ordering::SeqCst) {
+                break;
+            }
             match upstream_reader_stream.read(&mut buf) {
-                Ok(0) => { info!("upstream closed"); break; }
-                Ok(n) => { let _ = utx.send(buf[..n].to_vec()); }
-                Err(ref e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => continue,
-                Err(e) => { warn!("upstream read error: {e}"); let _ = usender.try_send(()); break; }
+                Ok(0) => {
+                    info!("upstream closed");
+                    break;
+                }
+                Ok(n) => {
+                    let _ = utx.send(buf[..n].to_vec());
+                }
+                Err(ref e)
+                    if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut =>
+                {
+                    continue
+                }
+                Err(e) => {
+                    warn!("upstream read error: {e}");
+                    let _ = usender.try_send(());
+                    break;
+                }
             }
         }
     });
@@ -892,9 +970,14 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
     // Slave acceptor (runs for the life of the process)
     if let Some(sl) = slave_listener {
         spawn_slave_acceptor(
-            sl, tx.clone(), magic_packet.to_vec(),
-            args.whitelist.clone(), args.max_slaves, args.tcp_buffers,
-            should_exit.clone(), Arc::new(Mutex::new(Vec::new())),
+            sl,
+            tx.clone(),
+            magic_packet.to_vec(),
+            args.whitelist.clone(),
+            args.max_slaves,
+            args.tcp_buffers,
+            should_exit.clone(),
+            Arc::new(Mutex::new(Vec::new())),
         );
     }
 
@@ -902,7 +985,9 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
 
     // Master reconnection loop
     loop {
-        if should_exit.load(Ordering::SeqCst) { break; }
+        if should_exit.load(Ordering::SeqCst) {
+            break;
+        }
         let (mut master_stream, addr) = match master_listener.accept() {
             Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(100));
@@ -912,15 +997,18 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
             Ok(conn) => conn,
         };
         let client_ip = addr.ip().to_canonical().to_string();
-        check_whitelist(&client_ip, &args.whitelist)
-            .map_err(|e| { warn!("Connection from {client_ip} refused"); e })?;
+        check_whitelist(&client_ip, &args.whitelist).map_err(|e| {
+            warn!("Connection from {client_ip} refused");
+            e
+        })?;
         info!("master connected from {addr}");
         master_stream.set_read_timeout(Some(read_timeout))?;
         master_stream.set_write_timeout(Some(Duration::from_secs(args.write_timeout)))?;
 
         // Send cached magic packet to local master
         let mut bufw = BufWriter::with_capacity(args.tcp_buffers, master_stream.try_clone()?);
-        bufw.write_all(&magic_packet)?; bufw.flush()?;
+        bufw.write_all(&magic_packet)?;
+        bufw.flush()?;
 
         // Subscribe master to broadcast for IQ data
         {
@@ -940,12 +1028,26 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
             loop {
                 match master_stream.read_exact(&mut buf) {
                     Ok(()) => {}
-                    Err(ref e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => continue,
-                    Err(ref e) if is_disconnect_err(e) => { info!("master disconnected"); break; }
-                    Err(e) => { warn!("master read error: {e}"); break; }
+                    Err(ref e)
+                        if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut =>
+                    {
+                        continue
+                    }
+                    Err(ref e) if is_disconnect_err(e) => {
+                        info!("master disconnected");
+                        break;
+                    }
+                    Err(e) => {
+                        warn!("master read error: {e}");
+                        break;
+                    }
                 }
-                if cexit.load(Ordering::SeqCst) { break; }
-                if !rl.check() { continue; }
+                if cexit.load(Ordering::SeqCst) {
+                    break;
+                }
+                if !rl.check() {
+                    continue;
+                }
                 let mut guard = write_cipher.lock().unwrap_or_else(|e| {
                     warn!("cipher lock poisoned, recovering");
                     e.into_inner()
@@ -955,9 +1057,12 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
                 }
                 if let Ok(mut guard) = ustream.lock() {
                     if let Err(e) = guard.write_all(&buf) {
-                        warn!("failed to forward command: {e}"); break;
+                        warn!("failed to forward command: {e}");
+                        break;
                     }
-                } else { break; }
+                } else {
+                    break;
+                }
             }
         });
 
@@ -965,7 +1070,9 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
         let _ = thread_ctl.join();
         info!("master disconnected, ready for reconnection");
 
-        if should_exit.load(Ordering::SeqCst) { break; }
+        if should_exit.load(Ordering::SeqCst) {
+            break;
+        }
     }
 
     // Full shutdown
@@ -977,20 +1084,36 @@ fn run_proxy_multi(args: Args) -> StdResult<(), RtlTcpError> {
 }
 
 fn is_disconnect_err(e: &std::io::Error) -> bool {
-    matches!(e.kind(), ErrorKind::UnexpectedEof | ErrorKind::ConnectionReset
-        | ErrorKind::BrokenPipe | ErrorKind::ConnectionAborted | ErrorKind::NotConnected)
+    matches!(
+        e.kind(),
+        ErrorKind::UnexpectedEof
+            | ErrorKind::ConnectionReset
+            | ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::NotConnected
+    )
 }
 
 fn parse_encryption_key(args: &Args) -> Result<Option<[u8; 32]>, RtlTcpError> {
     if let Some(ref hex_key) = args.key {
         let bytes = hex::decode(hex_key)
             .map_err(|e| RtlTcpError::Config(format!("invalid hex key: {e}")))?;
-        if bytes.len() != 32 { return Err(RtlTcpError::Config("key must be 32 bytes".into())); }
-        let mut k = [0u8; 32]; k.copy_from_slice(&bytes); Ok(Some(k))
+        if bytes.len() != 32 {
+            return Err(RtlTcpError::Config("key must be 32 bytes".into()));
+        }
+        let mut k = [0u8; 32];
+        k.copy_from_slice(&bytes);
+        Ok(Some(k))
     } else if let Some(ref path) = args.key_file {
         let bytes = std::fs::read(path)
             .map_err(|e| RtlTcpError::Config(format!("failed to read key file {path}: {e}")))?;
-        if bytes.len() != 32 { return Err(RtlTcpError::Config("key must be 32 bytes".into())); }
-        let mut k = [0u8; 32]; k.copy_from_slice(&bytes); Ok(Some(k))
-    } else { Ok(None) }
+        if bytes.len() != 32 {
+            return Err(RtlTcpError::Config("key must be 32 bytes".into()));
+        }
+        let mut k = [0u8; 32];
+        k.copy_from_slice(&bytes);
+        Ok(Some(k))
+    } else {
+        Ok(None)
+    }
 }
