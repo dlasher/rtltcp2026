@@ -152,9 +152,7 @@ pub struct AgcState {
 
 impl AgcState {
     pub fn new() -> Self {
-        Self {
-            enabled: AtomicBool::new(true),
-        }
+        Self::default()
     }
 
     pub fn enable(&self) -> bool {
@@ -163,6 +161,14 @@ impl AgcState {
 
     pub fn disable(&self) -> bool {
         self.enabled.swap(false, Ordering::SeqCst)
+    }
+}
+
+impl Default for AgcState {
+    fn default() -> Self {
+        Self {
+            enabled: AtomicBool::new(true),
+        }
     }
 }
 

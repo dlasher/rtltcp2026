@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 
 use clap::Parser;
 use tracing::{error, info};
-use tracing_subscriber;
 
 use rtltcp2026::capture::{self, CaptureChunk, CaptureHeader};
 

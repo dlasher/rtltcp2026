@@ -13,6 +13,8 @@ use clap::Parser;
 #[cfg(feature = "systemd")]
 use listenfd::ListenFd;
 use tracing::{debug, info, warn};
+
+type EncryptionNonces = Arc<Mutex<Option<([u8; 12], [u8; 12])>>>;
 use tokio::sync::broadcast;
 
 mod error;
@@ -461,7 +463,7 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
     let (sender, receiver) = sync_channel(1);
     let all_streams: Arc<Mutex<Vec<TcpStream>>> = Arc::new(Mutex::new(Vec::new()));
     let encryption_key = parse_encryption_key(&args)?;
-    let encryption_nonces: Arc<Mutex<Option<([u8; 12], [u8; 12])>>> = Arc::new(Mutex::new(None));
+    let encryption_nonces: EncryptionNonces = Arc::new(Mutex::new(None));
 
     // Signal handler: sets exit flag
     ctrlc::set_handler({
@@ -581,6 +583,7 @@ fn run_serve_multi(args: Args) -> StdResult<(), RtlTcpError> {
 }
 
 /// Spawn the master command-reading control thread
+#[allow(clippy::too_many_arguments)]
 fn spawn_master_control_thread(
     stream: TcpStream,
     ctl: Arc<Mutex<rtlsdr_mt::Controller>>,
@@ -589,7 +592,7 @@ fn spawn_master_control_thread(
     should_exit: Arc<AtomicBool>,
     read_timeout: Duration,
     encryption_key: Option<[u8; 32]>,
-    encryption_nonces: Arc<Mutex<Option<([u8; 12], [u8; 12])>>>,
+    encryption_nonces: EncryptionNonces,
 ) -> thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut stream = stream;
@@ -774,6 +777,7 @@ fn spawn_master_control_thread(
 }
 
 /// Spawn the slave acceptor thread with non-blocking accept loop
+#[allow(clippy::too_many_arguments)]
 fn spawn_slave_acceptor(
     listener: TcpListener, tx: broadcast::Sender<Vec<u8>>, magic: Vec<u8>,
     whitelist: Vec<String>, max_slaves: usize, tcp_buffers: usize,
