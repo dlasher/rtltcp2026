@@ -1,4 +1,11 @@
 # Changelog
+## [0.10.1] - 2026-05-24
+
+### Fixed
+- **CI workflows**: Replaced `--all-features` with `--features daemon_systemd` across all CI jobs to exclude hardware-dependent tests. The `hardware-tests` feature requires physical RTL-SDR devices and was causing spurious failures in CI (coverage, test, clippy, docs).
+- **MSRV clippy**: Fixed `needless_borrows_for_generic_args` at `src/main.rs:158` (`TcpListener::bind(&addr)` → `TcpListener::bind(addr)`).
+- **Code formatting**: Ran `cargo fmt` to satisfy the Rustfmt CI check.
+
 ## [0.10.0] - 2026-05-24
 
 ### Added
